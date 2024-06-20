@@ -16,7 +16,9 @@ class Server {
             deportes: '/api/deportes',
             equipos: '/api/equipos',
             listasMaestras: '/api/listas-maestras',
-            partidos: '/api/partidos'
+            partidos: '/api/partidos',
+            complejos: '/api/complejos',
+            canchas: '/api/canchas'
         }
        
         
@@ -54,6 +56,8 @@ class Server {
         this.app.use(this.paths.equipos, require('../routes/equipos'));
         this.app.use(this.paths.listasMaestras, require('../routes/listas-maestras'));
         this.app.use(this.paths.partidos, require('../routes/partidos'));
+        this.app.use(this.paths.complejos, require('../routes/complejos'));
+        this.app.use(this.paths.canchas, require('../routes/canchas'));
     }
 
     listen() {

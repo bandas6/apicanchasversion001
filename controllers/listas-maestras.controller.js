@@ -8,6 +8,11 @@ const obtenerRoles = async (req = request, res = response) => {
 
         const roles = await Roles.find();
 
+        const rolToRemove = 'ADMIN_CANCHAS_ROL';
+        const updatedRoles = roles.filter(role => role.rol !== rolToRemove);
+
+        console.log(updatedRoles);
+
         res.status(200).json({
             ok: true,
             roles

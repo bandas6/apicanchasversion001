@@ -1,28 +1,29 @@
 const { Router } = require("express");
-const { guardarPartido, obtenerPartidos, obtenerPartido,  } = require("../controllers/partidos.controller");
-const { partidoExiste } = require("../helpers/db-validators");
+const { nombreComplejoExise } = require("../helpers/db-validators");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
+const { guardarComplejo, obtenerComplejo, obtenerComplejos } = require("../controllers/complejos.controller");
 
 
 const router = Router()
 
 
 
-router.get('/', obtenerPartidos);
+router.get('/', obtenerComplejos);
 
 router.get('/:id', 
     validarJWT,
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
-    obtenerPartido);
+    obtenerComplejo);
 
 router.post('/', [
-    // validarJWT,
-    check('usuarios').custom(partidoExiste),
+    validarJWT,
+    check('administrador', 'No es un id valido').isMongoId(),
+    check('nombre').custom(nombreComplejoExise),
     validarCampos
-], guardarPartido);
+], guardarComplejo);
 
 
 module.exports = router;

@@ -18,6 +18,10 @@ const UsuarioSchema = new Schema({
         type: String,
         // required: [true, 'La contraseña es obligatoria'],
     },
+    valoracion: { 
+        type: Number,
+        default: 0
+    },
     img: { 
         type: String,
     },
@@ -34,6 +38,10 @@ const UsuarioSchema = new Schema({
     equipo_id: { 
         type: Schema.Types.ObjectId,
         ref: 'Equipo',
+    },
+    complejo:{
+        type: Schema.Types.ObjectId,
+        ref: 'Complejo',
     },
     google: { 
         type: Boolean,

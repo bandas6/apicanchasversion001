@@ -41,40 +41,12 @@ const obtenerEquipo = async (req = request, res = response) => {
 
         const { id } = req.params;
 
-        const equipo = await Equipos.findById(id).populate('usuario').populate('usuario jugadores.id');
-
-
-        // if (equipo) {
-        //     const idsUsuariosReto = equipo.reto.map(reto => reto.usuario);
-        //     const usuariosRetantes = await Usuarios.find({ _id: { $in: idsUsuariosReto } });
-
-        //     usuariosRetantes.forEach(async (usuarioRetante) => {
-              
-        //         const equipoRetante = await Equipos.find({ _id: { $in: usuarioRetante.equipo_id } });
-        
-        //         let infoReto = {
-        //             usuarioRetante,
-        //             equipoRetante
-        //         };
-
-        //         // resto.reto.usuario = usuarioRetante;
-        //         // resto.reto.equipo = equipoRetante;
-
-        //         res.status(200).json({
-        //             ok: true,
-        //             equipo,
-        //             equipo.infoReto infoReto
-        //         })
-
-        //     });
-        // }
+        const equipo = await Equipos.findById(id).populate('usuario').populate('usuario jugadores.id')
 
         res.status(200).json({
             ok: true,
             equipo,
         })
-
-    
 
     } catch (error) {
 

@@ -19,6 +19,7 @@ const obtenerUsuarios = async (req = require, res = response) => {
             Usuarios.find(query)
                 .skip(Number(desde))
                 .limit(Number(limit))
+                .populate('equipo_id')
         ])
 
         return res.status(200).json({
@@ -45,7 +46,7 @@ const obtenerUsuario = async (req = require, res = response) => {
 
         const { id } = req.params;
 
-        const usuario = await Usuarios.findById(id);
+        const usuario = await Usuarios.findById(id).populate('equipo_id')
 
         return res.status(200).json({
             ok: true,

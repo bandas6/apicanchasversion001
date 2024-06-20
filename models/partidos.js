@@ -5,10 +5,10 @@ const PartidosSchema = new Schema({
         type: Boolean,
         default: false
     },
-    resultado: [{
+    resultado: {
         equipoUno: { type: Number },
         equipoDos: { type: Number },
-    }],
+    },
     equipos: {
         equipoUno: { type: Schema.Types.ObjectId, ref: 'Equipo' },
         equipoDos: { type: Schema.Types.ObjectId, ref: 'Equipo' }

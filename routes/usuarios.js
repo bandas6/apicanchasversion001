@@ -4,7 +4,7 @@ const { guardarUsuario, obtenerUsuarios, obtenerUsuario, actualizarUsuario, elim
 const { usuarioExiste, esRolValido, usuarioNoExiste, usuarioConCorreoNoExiste } = require("../helpers/db-validators");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { validarJWT } = require("../middlewares/validar-jwt");
-const { esAdminRol } = require("../middlewares/validar-roles");
+const { esAdminRol, usuarioEsJugador } = require("../middlewares/validar-roles");
 
 
 const router = Router();
@@ -23,12 +23,14 @@ router.post('/',[
     check('password', 'el password debe tener mas de 6 caracteres').isLength({ min: 6 }),
     check('rol').custom(esRolValido),
     check('correo').custom(usuarioExiste),
+    // check('valoracion','rol').custom(usuarioEsJugador),
     validarCampos
 ], guardarUsuario);
 
 router.put('/:id',[
     check('rol').custom(esRolValido),
     check('id').custom(usuarioNoExiste),
+    usuarioEsJugador,
     validarCampos
 ], actualizarUsuario);
 
