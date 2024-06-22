@@ -24,6 +24,7 @@ const equipoExiste = async (equipos) => {
 
 }
 
+
 const nombreComplejoExise = async (nombre) => {
 
     const complejo = await Complejos.findOne({ nombre });
@@ -107,5 +108,5 @@ module.exports = {
     equipoExiste,
     usuarioConEquipoRegistrado,
     partidoExiste,
-    nombreComplejoExise
+    nombreComplejoExise,
 }

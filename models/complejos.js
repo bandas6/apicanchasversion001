@@ -4,7 +4,7 @@ const ComplejosSchema = new Schema({
     nombre: {
         type: String,
     },
-    barrio: {
+    ubicacion: {
         type: String,
     },
     direccion: {

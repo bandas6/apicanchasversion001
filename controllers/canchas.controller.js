@@ -92,6 +92,7 @@ const obtenerCanchas = async (req = request, res = response) => {
             Canchas.find(query)
                 .skip(Number(desde))
                 .limit(Number(limit))
+                .populate('complejo')
         ])
 
         res.status(200).json({

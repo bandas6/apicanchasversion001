@@ -24,6 +24,30 @@ const guardarComplejo = async (req = request, res = response) => {
 };
 
 
+const actualizarComplejo = async (req = request, res = response) => {
+    
+    const { id } = req.params;
+
+    try {
+        const data = req.body;
+
+        const complejo = await Complejos.findByIdAndUpdate(id, data, { new: true })
+        .populate('administrador'); // Aquí se debe usar Complejo en lugar de Complejos
+
+        res.status(200).json({
+            ok: true,
+            complejo
+        });
+
+    } catch (error) {
+        res.status(400).json({
+            ok: false,
+            error
+        });
+    }
+};
+
+
 const obtenerComplejos = async (req = request, res = response) => {
 
     query = {}
@@ -86,5 +110,6 @@ const obtenerComplejo = async (req = request, res = response) => {
 module.exports = {
     guardarComplejo,
     obtenerComplejos,
-    obtenerComplejo
+    obtenerComplejo,
+    actualizarComplejo
 }
