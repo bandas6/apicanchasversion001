@@ -56,7 +56,7 @@ const partidoExiste = async (usuarios) => {
 const usuarioConEquipoRegistrado = async (usuario) => {
 
     const equipo = await Equipos.findOne({ usuario });
-    
+
     if (equipo) {
         throw new Error(`El usuario ya tiene un equipo registrado`);
     }
@@ -99,7 +99,6 @@ const esRolValido = async (rol = '') => {
 
 }
 
-
 module.exports = {
     usuarioExiste,
     esRolValido,
@@ -108,5 +107,5 @@ module.exports = {
     equipoExiste,
     usuarioConEquipoRegistrado,
     partidoExiste,
-    nombreComplejoExise,
+    nombreComplejoExise
 }

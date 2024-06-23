@@ -18,7 +18,8 @@ class Server {
             listasMaestras: '/api/listas-maestras',
             partidos: '/api/partidos',
             complejos: '/api/complejos',
-            canchas: '/api/canchas'
+            canchas: '/api/canchas',
+            retos: '/api/retos',
         }
        
         
@@ -58,6 +59,7 @@ class Server {
         this.app.use(this.paths.partidos, require('../routes/partidos'));
         this.app.use(this.paths.complejos, require('../routes/complejos'));
         this.app.use(this.paths.canchas, require('../routes/canchas'));
+        this.app.use(this.paths.retos, require('../routes/retos'));
     }
 
     listen() {

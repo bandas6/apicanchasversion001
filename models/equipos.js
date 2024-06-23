@@ -20,10 +20,9 @@ const EquiposSchema = new Schema({
         id: {type: Schema.Types.ObjectId,ref: 'Usuario'},
         aceptado: {type: Boolean, default: false}
     }], 
-    reto: [{
-        equipo: { type: Schema.Types.ObjectId, ref: 'Equipo' },
-        usuario: { type: Schema.Types.ObjectId, ref: 'Usuario' },
-        aceptado: { type: Boolean, default: false }
+    retos: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Reto',
     }],
     usuario: {
         type: Schema.Types.ObjectId,
