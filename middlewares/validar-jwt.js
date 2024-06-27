@@ -14,8 +14,6 @@ const validarJWT = async (req = request, res = response, next) => {
     // Extraer el token del encabezado Authorization
     const token = authHeader.split(' ')[1];
 
-    console.log(token)
-
     try {
         // Verificar y decodificar el token
         const { uid } = jwt.verify(token, process.env.SECRETORPRIVATEKEY);

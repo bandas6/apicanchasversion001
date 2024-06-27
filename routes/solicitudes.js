@@ -2,38 +2,37 @@ const { Router } = require("express");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
-const { obtenerCancha, obtenerCanchas, guardarCancha, guardarYAgregarCanchaAComplejo, actualizarCancha } = require("../controllers/canchas.controller");
+const { obtenerSolicitud, obtenerSolicitudes, guardarSolicitud, actualizarSolicitud } = require("../controllers/solicitudes.controller");
+const { solicitudYaExiste } = require("../middlewares/validar-generales");
 
 
 const router = Router()
 
 
 
-router.get('/', obtenerCanchas);
+router.get('/', [
+    validarJWT
+    ],obtenerSolicitudes);
 
-router.get('/:id', 
+router.get('/:id', [
     validarJWT,
     check('id', 'No es un id valido').isMongoId(),
-    validarCampos,
-    obtenerCancha);
+    validarCampos],
+    obtenerSolicitud);
 
 router.post('/', [
     validarJWT,
-    check('complejo', 'No es un id valido').isMongoId(),
+    check('usuario').custom(solicitudYaExiste),
     validarCampos
-], guardarCancha);
-
-router.put('/complejo/:id', [
-    validarJWT,
-    check('id', 'No es un id valido').isMongoId(),
-    validarCampos
-], guardarYAgregarCanchaAComplejo);
+], guardarSolicitud);
 
 router.put('/:id', [
     validarJWT,
     check('id', 'No es un id valido').isMongoId(),
+    // check('usuarios').custom(partidoExiste),
     validarCampos
-], actualizarCancha);
+], actualizarSolicitud
+);
 
 
 module.exports = router;

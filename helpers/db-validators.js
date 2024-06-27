@@ -1,7 +1,9 @@
 const Complejos = require("../models/complejos");
 const Equipos = require("../models/equipos");
 const Partidos = require("../models/partidos");
+const Reservas = require("../models/reservas");
 const Roles = require("../models/roles");
+const Solicitudes = require("../models/solicitudes");
 const Usuario = require("../models/usuarios");
 
 const usuarioExiste = async (correo) => {
@@ -23,7 +25,6 @@ const equipoExiste = async (equipos) => {
     }
 
 }
-
 
 const nombreComplejoExise = async (nombre) => {
 
@@ -53,6 +54,7 @@ const partidoExiste = async (usuarios) => {
         throw new Error(`Ya has enviado una solicitud a este equipo`);
     }
 }
+
 const usuarioConEquipoRegistrado = async (usuario) => {
 
     const equipo = await Equipos.findOne({ usuario });
@@ -99,6 +101,16 @@ const esRolValido = async (rol = '') => {
 
 }
 
+const diaYaExiste = async (dia) => {
+
+    const existeDia = await Reservas.findOne({ dia });
+
+    if (existeDia) {
+        throw new Error(`El dia ${dia} ya existe, nesesitas actualizarlo`);
+    }
+
+}
+
 module.exports = {
     usuarioExiste,
     esRolValido,
@@ -107,5 +119,6 @@ module.exports = {
     equipoExiste,
     usuarioConEquipoRegistrado,
     partidoExiste,
-    nombreComplejoExise
+    nombreComplejoExise,
+    diaYaExiste
 }

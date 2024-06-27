@@ -79,6 +79,68 @@ const guardarYAgregarCanchaAComplejo = async (req = request, res = response) => 
     }
 };
 
+const actualizarCancha = async (req = request, res = response) => {
+    const { id } = req.params;
+    const data = req.body;
+
+    try {
+        // Verificar si fechasDisponibles es un array válido
+        if (data.fechasDisponibles) {
+            if (!Array.isArray(data.fechasDisponibles)) {
+                return res.status(400).json({
+                    ok: false,
+                    msg: 'fechasDisponibles debe ser un array de fechas válidas'
+                });
+            }
+
+            // Validar que cada fecha en el array sea una fecha válida
+            const fechasValidas = data.fechasDisponibles.every(fecha => !isNaN(Date.parse(fecha)));
+            if (!fechasValidas) {
+                return res.status(400).json({
+                    ok: false,
+                    msg: 'Cada fecha en fechasDisponibles debe ser una fecha válida'
+                });
+            }
+        }
+
+        if(data.solicitudes){
+            if (!Array.isArray(data.solicitudes)) {
+                return res.status(400).json({
+                    ok: false,
+                    msg:'solicitudes debe ser un array de solicitudes válidas'
+                });
+            }
+        }
+
+        // Actualizar la cancha, asegurándote de usar $set para actualizar arrays
+        const canchaActualizada = await Canchas.findByIdAndUpdate(
+            id,
+            { $set: data }, // Usar $set para actualizar el objeto completo, incluyendo fechasDisponibles
+            { new: true, runValidators: true, useFindAndModify: false }
+        );
+
+        if (!canchaActualizada) {
+            return res.status(404).json({
+                ok: false,
+                msg: 'Cancha no encontrada'
+            });
+        }
+
+        res.status(200).json({
+            ok: true,
+            cancha: canchaActualizada
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar la cancha:', error);
+        res.status(500).json({
+            ok: false,
+            error: 'Error interno del servidor'
+        });
+    }
+};
+
+
 
 const obtenerCanchas = async (req = request, res = response) => {
 
@@ -141,5 +203,6 @@ module.exports = {
     guardarCancha,
     obtenerCanchas,
     obtenerCancha,
-    guardarYAgregarCanchaAComplejo
+    guardarYAgregarCanchaAComplejo,
+    actualizarCancha
 }

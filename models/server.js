@@ -20,6 +20,8 @@ class Server {
             complejos: '/api/complejos',
             canchas: '/api/canchas',
             retos: '/api/retos',
+            solicitudes: '/api/solicitudes',
+            reservas: '/api/reservas',
         }
        
         
@@ -60,6 +62,8 @@ class Server {
         this.app.use(this.paths.complejos, require('../routes/complejos'));
         this.app.use(this.paths.canchas, require('../routes/canchas'));
         this.app.use(this.paths.retos, require('../routes/retos'));
+        this.app.use(this.paths.solicitudes, require('../routes/solicitudes'));
+        this.app.use(this.paths.reservas, require('../routes/reservas'));
     }
 
     listen() {
