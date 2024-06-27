@@ -2,7 +2,7 @@ const { Router } = require("express");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
-const { obtenerReservas, obtenerReserva, guardarReserva, actualizarReserva, obtenerReservasCancha, actualizarHoraHorario } = require("../controllers/reservas.controller");
+const { obtenerReservas, obtenerReserva, guardarReserva, actualizarReserva, obtenerReservasCancha, actualizarHoraHorario, actualizarEstadoUsuario } = require("../controllers/reservas.controller");
 const { diaYaExiste } = require("../helpers/db-validators");
 
 const router = Router();
@@ -47,6 +47,14 @@ router.put('/:id/horario/:horarioId', [
     check('horarioId', 'No es un id valido').isMongoId(),
     validarCampos
 ], actualizarHoraHorario);
+
+router.put('/:idReserva/horario/:horarioId/usuario/:usuarioId',[
+    validarJWT,
+    check('idReserva', 'No es un id valido').isMongoId(),
+    check('horarioId', 'No es un id valido').isMongoId(),
+    check('usuarioId', 'No es un id valido').isMongoId(),
+    validarCampos
+], actualizarEstadoUsuario)
 
 
 module.exports = router;

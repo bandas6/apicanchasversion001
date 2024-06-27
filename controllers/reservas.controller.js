@@ -127,6 +127,68 @@ const actualizarHoraHorario = async (req = request, res = response) => {
 };
 
 
+const actualizarEstadoUsuario = async (req = request, res = response) => {
+    const { idReserva, horarioId, usuarioId } = req.params;  // Añadido usuarioId para identificar al usuario específico
+    const { estado, aceptado } = req.body;  // Añadido aceptado para actualizar este campo
+    console.log(aceptado)
+    try {
+        // Buscar la reserva por su id
+        const reserva = await Reservas.findById(idReserva);
+
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                msg: 'Reserva no encontrada'
+            });
+        }
+
+        // Encontrar el horario dentro de la lista de horarios por su id
+        const horario = reserva.horarios.id(horarioId);
+
+        if (!horario) {
+            return res.status(404).json({
+                ok: false,
+                msg: 'Horario no encontrado'
+            });
+        }
+
+        // Actualizar el estado del horario si se proporciona
+        if (estado !== undefined) {
+            if (![0, 1, 2, 3].includes(estado)) {
+                return res.status(400).json({
+                    ok: false,
+                    msg: 'Estado no válido'
+                });
+            }
+            horario.estado = estado;
+        }
+
+        const usuario = horario.usuarios.id(usuarioId)
+
+        // Actualizar aceptad en usuarios
+
+        if (usuario && aceptado!== undefined) {
+            usuario.aceptado = aceptado;
+        }
+        // Guardar los cambios en la reserva
+        await reserva.save();
+
+        res.status(200).json({
+            ok: true,
+            reserva
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            ok: false,
+            msg: 'Error actualizando la hora del horario',
+            error: error.message
+        });
+    }
+};
+
+
+
 const obtenerReservasCancha = async (req = request, res = response) => {
     const { id } = req.params
     query = { cancha: id };
@@ -219,5 +281,6 @@ module.exports = {
     obtenerReservasCancha,
     actualizarReserva,
     obtenerReservas,
-    actualizarHoraHorario
+    actualizarHoraHorario,
+    actualizarEstadoUsuario
 }
