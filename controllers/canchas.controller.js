@@ -29,33 +29,8 @@ const guardarYAgregarCanchaAComplejo = async (req = request, res = response) => 
     const canchasData = req.body; // Array de datos de las nuevas Canchas
 
     try {
-        // Eliminar todas las canchas existentes del complejo
-        await Complejos.findByIdAndUpdate(
-            id,
-            { $set: { canchas: [] } }, // Vaciar el array de canchas
-            { useFindAndModify: false }
-        );
-
-        // Crear un array para almacenar las promesas de guardado de las canchas
-        const promesasGuardado = canchasData.map(async (canchaData) => {
-            // Crear una nueva instancia de Cancha
-            const nuevaCancha = new Canchas(canchaData);
-            // Guardar la nueva cancha en la base de datos y retornar la promesa
-            return nuevaCancha.save();
-        });
-
-        // Ejecutar todas las promesas de guardado concurrentemente
-        const canchasGuardadas = await Promise.all(promesasGuardado);
-
-        // Obtener los IDs de las canchas guardadas
-        const canchasIds = canchasGuardadas.map(cancha => cancha._id);
-
-        // Actualizar el complejo con los IDs de las nuevas canchas
-        const complejo = await Complejos.findByIdAndUpdate(
-            id,
-            { $addToSet: { canchas: { $each: canchasIds } } }, // Usar $each para agregar múltiples elementos
-            { new: true, useFindAndModify: false }
-        ).populate('canchas', 'nombre direccion'); // Populate para devolver información de las canchas
+        // Obtener el complejo actual
+        const complejo = await Complejos.findById(id).populate('canchas', 'nombre direccion');
 
         if (!complejo) {
             return res.status(404).json({
@@ -64,20 +39,62 @@ const guardarYAgregarCanchaAComplejo = async (req = request, res = response) => 
             });
         }
 
+        // IDs de las canchas existentes en el complejo
+        const canchasExistentesIds = complejo.canchas.map(cancha => cancha._id.toString());
+
+        // Array para almacenar nuevas canchas a agregar
+        const nuevasCanchasIds = [];
+
+        // Promesas de actualización/creación de canchas
+        const promesasCanchas = canchasData.map(async (canchaData) => {
+            if (canchaData._id && canchasExistentesIds.includes(canchaData._id)) {
+                // Actualizar cancha existente
+                const canchaActualizada = await Canchas.findByIdAndUpdate(
+                    canchaData._id,
+                    canchaData,
+                    { new: true, useFindAndModify: false }
+                );
+                return canchaActualizada._id;
+            } else {
+                // Crear nueva cancha
+                const nuevaCancha = new Canchas(canchaData);
+                const canchaGuardada = await nuevaCancha.save();
+                nuevasCanchasIds.push(canchaGuardada._id);
+                return canchaGuardada._id;
+            }
+        });
+
+        // Ejecutar todas las promesas de actualización/creación
+        const canchasActualizadasOIds = await Promise.all(promesasCanchas);
+
+        // Determinar IDs de canchas a eliminar
+        const canchasEliminarIds = canchasExistentesIds.filter(idExistente => !canchasData.some(cancha => cancha._id === idExistente));
+
+        // Eliminar canchas que ya no están en la lista
+        await Canchas.deleteMany({ _id: { $in: canchasEliminarIds } });
+
+        // Actualizar el complejo con las nuevas y actualizadas canchas
+        const complejoActualizado = await Complejos.findByIdAndUpdate(
+            id,
+            { canchas: canchasActualizadasOIds },
+            { new: true, useFindAndModify: false }
+        ).populate('canchas', 'nombre direccion');
+
         res.status(200).json({
             ok: true,
-            complejo,
-            canchas: canchasGuardadas
+            complejo: complejoActualizado,
+            canchas: canchasActualizadasOIds
         });
 
     } catch (error) {
-        console.error('Error al crear y reemplazar las canchas del complejo:', error);
+        console.error('Error al crear y actualizar las canchas del complejo:', error);
         res.status(500).json({
             ok: false,
             error: 'Error interno del servidor'
         });
     }
 };
+
 
 const actualizarCancha = async (req = request, res = response) => {
     const { id } = req.params;
