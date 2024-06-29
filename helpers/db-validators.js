@@ -101,15 +101,6 @@ const esRolValido = async (rol = '') => {
 
 }
 
-const diaYaExiste = async (dia) => {
-
-    const existeDia = await Reservas.findOne({ dia });
-
-    if (existeDia) {
-        throw new Error(`El dia ${dia} ya existe, nesesitas actualizarlo`);
-    }
-
-}
 
 module.exports = {
     usuarioExiste,
@@ -119,6 +110,5 @@ module.exports = {
     equipoExiste,
     usuarioConEquipoRegistrado,
     partidoExiste,
-    nombreComplejoExise,
-    diaYaExiste
+    nombreComplejoExise
 }

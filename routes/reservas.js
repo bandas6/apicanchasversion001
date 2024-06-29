@@ -3,7 +3,7 @@ const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
 const { obtenerReservas, obtenerReserva, guardarReserva, actualizarReserva, obtenerReservasCancha, actualizarHoraHorario, actualizarEstadoUsuario } = require("../controllers/reservas.controller");
-const { diaYaExiste } = require("../helpers/db-validators");
+const { diaYaExiste } = require("../middlewares/validar-generales");
 
 const router = Router();
 
@@ -29,7 +29,7 @@ router.post('/', [
     validarJWT,
     check('complejo', 'No es un id valido').isMongoId(),
     check('cancha', 'No es un id valido').isMongoId(),
-    check('dia').custom(diaYaExiste),
+    // check('dia').custom(diaYaExiste),
     validarCampos
 ], guardarReserva);
 

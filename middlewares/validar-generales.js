@@ -1,3 +1,5 @@
+const Complejos = require("../models/complejos");
+const Reservas = require("../models/reservas");
 const Solicitudes = require("../models/solicitudes");
 
 const retoYaExistente = async (usuarioRetado, { req }) => {
@@ -33,7 +35,40 @@ const solicitudYaExiste = async (usuario, { req }) => {
 };
 
 
+const diaYaExiste = async (dia, { req }) => {
+    const { usuarioAuth } = req;
+    
+    // Asegúrate de que `usuarioAuth` y `usuarioAuth.complejo` existen
+    if (!usuarioAuth || !usuarioAuth.complejo) {
+        console.log('Usuario no autorizado o complejo no encontrado en la autenticación');
+    }
+
+    const { complejo } = usuarioAuth;
+    
+    // Busca el complejo por su ID
+    const complejoEncontrado = await Complejos.findById(complejo);
+    
+    if (!complejoEncontrado) {
+        console.log(`El complejo con ID ${complejo} no se encontró`);
+    }
+
+    console.log('Complejo encontrado:', complejoEncontrado);
+
+    const reserva = await Reservas.findOne({
+        $or: [
+            { 'complejo': complejoEncontrado, 'dia': dia },
+        ]
+    });
+
+    if(reserva){
+        throw new Error(`Ya hay reservas para este día en el complejo ${complejoEncontrado.nombre}`);
+    }
+   
+};
+
+
 module.exports = {
     retoYaExistente,
-    solicitudYaExiste
+    solicitudYaExiste,
+    diaYaExiste
 };

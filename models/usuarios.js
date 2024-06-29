@@ -1,5 +1,10 @@
 const { Schema, model } = require('mongoose');
 
+const diasYHorasSchema = new Schema({
+    dias: { type: String },
+    horas: { type: String }
+}, { _id: false }); // _id: false para no crear _id para subdocumentos
+
 const UsuarioSchema = new Schema({
     nombre: {
         type: String,
@@ -12,38 +17,36 @@ const UsuarioSchema = new Schema({
     correo: {
         type: String,
         // required: [true, 'El correo es obligatorio'],
-        unique: true
     },
-    password: { 
+    password: {
         type: String,
         // required: [true, 'La contraseña es obligatoria'],
     },
-    valoracion: { 
+    valoracion: {
         type: Number,
         default: 0
     },
-    img: { 
+    img: {
         type: String,
     },
-    rol: { 
+    rol: {
         type: String,
-        required: true,
-        default:'USER_ROL',
+        default: 'USER_ROL',
     },
-    
-    estado: { 
+    diasYHoras: diasYHorasSchema,
+    estado: {
         type: Boolean,
         default: true
     },
-    equipo_id: { 
+    equipo_id: {
         type: Schema.Types.ObjectId,
         ref: 'Equipo',
     },
-    complejo:{
+    complejo: {
         type: Schema.Types.ObjectId,
         ref: 'Complejo',
     },
-    google: { 
+    google: {
         type: Boolean,
         default: false
     }
@@ -51,7 +54,7 @@ const UsuarioSchema = new Schema({
 
 
 UsuarioSchema.methods.toJSON = function () {
-    const { __v, password, _id , estado, ...user } = this.toObject();
+    const { __v, password, _id, estado, ...user } = this.toObject();
     user.uid = _id;
     return user;
 }

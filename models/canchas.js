@@ -18,9 +18,17 @@ const CanchasSchema = new Schema({
     img: {
         type: String,
     },
+    _id: {
+        type: Schema.Types.ObjectId,
+        auto: true,
+    },
     fechasDisponibles: [{
         type: Date,
     }],
+    reserva:{
+        type: Boolean,
+        default: false,
+    },
     solicitudes: [{
         type: Schema.Types.ObjectId,
         ref: 'Solicitud',
