@@ -18,8 +18,22 @@ const SolicitudSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'Cancha',
     },
-    fechaSeleccionada: {
+    reservaId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Reserva'
+    },
+    horaId:{
+        type: Schema.Types.ObjectId,
+        ref: 'Hora'
+    },
+    tipoHorario:{
+        type:String
+    },
+    fechaSolicitada: {
         type: Date,
+    },
+    horaDelJuego:{
+        type: String,
     },
     fechaCreacion: {
         type: Date,

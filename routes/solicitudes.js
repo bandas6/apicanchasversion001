@@ -22,7 +22,7 @@ router.get('/:id', [
 
 router.post('/', [
     validarJWT,
-    check('usuario').custom(solicitudYaExiste),
+    // check('usuario').custom(solicitudYaExiste),
     validarCampos
 ], guardarSolicitud);
 

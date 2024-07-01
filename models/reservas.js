@@ -8,7 +8,7 @@ const HorarioSchema = new Schema({
     },
     estado: {
         type: Number,
-        enum: [0, 1, 2, 3], // 0: no disponible, 1: disponible 2:Solicitado 3:reservado
+        enum: [0, 1, 2, 3, 4], // 0: no disponible, 1: disponible 2:Solicitado 3:reservado 4:cancelado
         default: 1, // Por defecto, las horas están disponibles
         required: true
     },
@@ -21,7 +21,10 @@ const HorarioSchema = new Schema({
             type: Boolean,
             default: false
         }
-    }]
+    }],
+    semana: {
+        type: String
+    }
 });
 
 const ReservasSchema = new Schema({
@@ -33,7 +36,11 @@ const ReservasSchema = new Schema({
         type: Date,
         default: Date.now
     },
-    horarios: {
+    horariosUno: {
+        type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
+        default: [] // Por defecto, la lista de horarios es vacía
+    },
+    horariosDos: {
         type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
         default: [] // Por defecto, la lista de horarios es vacía
     },

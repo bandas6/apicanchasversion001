@@ -59,7 +59,7 @@ const actualizarReserva = async (req = request, res = response) => {
 
 const actualizarHoraHorario = async (req = request, res = response) => {
     const { id, horarioId } = req.params;
-    const { estado, usuarios } = req.body;
+    const { estado, usuarios, tipoHorario } = req.body;
 
     try {
         // Buscar la reserva por su id
@@ -74,7 +74,15 @@ const actualizarHoraHorario = async (req = request, res = response) => {
         }
 
         // Encontrar el horario dentro de la lista de horarios por su id
-        const horario = reserva.horarios.id(horarioId);
+
+        let horario;
+
+        if(tipoHorario === 'horarioUno'){
+            horario = reserva.horariosUno.id(horarioId);
+        }else{
+            horario = reserva.horariosDos.id(horarioId);
+        }
+
 
         if (!horario) {
             console.log('Horario no encontrado');
@@ -129,7 +137,7 @@ const actualizarHoraHorario = async (req = request, res = response) => {
 
 const actualizarEstadoUsuario = async (req = request, res = response) => {
     const { idReserva, horarioId, usuarioId } = req.params;  // Añadido usuarioId para identificar al usuario específico
-    const { estado, aceptado } = req.body;  // Añadido aceptado para actualizar este campo
+    const { estado, aceptado, tipoHorario } = req.body;  // Añadido aceptado para actualizar este campo
     console.log(aceptado)
     try {
         // Buscar la reserva por su id
@@ -143,7 +151,14 @@ const actualizarEstadoUsuario = async (req = request, res = response) => {
         }
 
         // Encontrar el horario dentro de la lista de horarios por su id
-        const horario = reserva.horarios.id(horarioId);
+        let horario;
+        
+        if(tipoHorario === 'horarioUno'){
+            horario = reserva.horariosUno.id(horarioId);
+        }else{
+            horario = reserva.horariosDos.id(horarioId);
+        }
+
 
         if (!horario) {
             return res.status(404).json({
@@ -201,7 +216,8 @@ const obtenerReservasCancha = async (req = request, res = response) => {
             Reservas.find(query)
                 .populate('complejo')
                 .populate('cancha')
-                .populate('horarios.usuarios.usuario')
+                .populate('horariosUno.usuarios.usuario')
+                .populate('horariosDos.usuarios.usuario')
         ])
 
         res.status(200).json({

@@ -32,6 +32,11 @@ const CanchasSchema = new Schema({
     solicitudes: [{
         type: Schema.Types.ObjectId,
         ref: 'Solicitud',
+    }],
+    dias: [{
+        type: String,
+        enum: ['L', 'M', 'M', 'J', 'V', 'S', 'D'],
+        required: [true, 'Los dias son obligatorios'],
     }]
 });
 
