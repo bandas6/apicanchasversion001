@@ -22,6 +22,7 @@ class Server {
             retos: '/api/retos',
             solicitudes: '/api/solicitudes',
             reservas: '/api/reservas',
+            historialReservas: '/api/historial-reservas',
         }
        
         
@@ -64,6 +65,7 @@ class Server {
         this.app.use(this.paths.retos, require('../routes/retos'));
         this.app.use(this.paths.solicitudes, require('../routes/solicitudes'));
         this.app.use(this.paths.reservas, require('../routes/reservas'));
+        this.app.use(this.paths.historialReservas, require('../routes/historial-reserva'));
     }
 
     listen() {

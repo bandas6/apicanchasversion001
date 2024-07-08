@@ -22,6 +22,10 @@ const CanchasSchema = new Schema({
         type: Schema.Types.ObjectId,
         auto: true,
     },
+    eliminado: {
+        type: Boolean,
+        default: false,
+    },
     fechasDisponibles: [{
         type: Date,
     }],

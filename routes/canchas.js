@@ -2,7 +2,7 @@ const { Router } = require("express");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
-const { obtenerCancha, obtenerCanchas, guardarCancha, guardarYAgregarCanchaAComplejo, actualizarCancha } = require("../controllers/canchas.controller");
+const { obtenerCancha, obtenerCanchas, guardarCancha, guardarYAgregarCanchaAComplejo, actualizarCancha, eliminarCancha } = require("../controllers/canchas.controller");
 
 
 const router = Router()
@@ -34,6 +34,12 @@ router.put('/:id', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos
 ], actualizarCancha);
+
+router.delete('/eliminar/:id', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos
+], eliminarCancha);
 
 
 module.exports = router;

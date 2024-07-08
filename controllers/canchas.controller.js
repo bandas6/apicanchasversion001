@@ -153,7 +153,7 @@ const actualizarCancha = async (req = request, res = response) => {
 
 const obtenerCanchas = async (req = request, res = response) => {
 
-    query = {}
+    query = {eliminado:false}
     const { desde, limit } = req.params
 
     try {
@@ -208,11 +208,39 @@ const obtenerCancha = async (req = request, res = response) => {
     }
 };
 
+const eliminarCancha = async (req = request, res = response) => {
+    const { id } = req.params;
+    try {
+        // Eliminar la cancha
+        const canchaEliminada = await Canchas.findByIdAndDelete(id);
+
+        if (!canchaEliminada) {
+            return res.status(404).json({
+                ok: false,
+                msg: 'Cancha no encontrada'
+            });
+        }
+
+        res.status(200).json({
+            ok: true,
+            msg: 'Cancha eliminada'
+        });
+
+    } catch (error) {
+        console.error('Error al eliminar la cancha:', error);
+        return res.status(500).json({
+            ok: false,
+            error: 'Error interno del servidor'
+        });
+    }
+}
+
 
 module.exports = {
     guardarCancha,
     obtenerCanchas,
     obtenerCancha,
     guardarYAgregarCanchaAComplejo,
-    actualizarCancha
+    actualizarCancha,
+    eliminarCancha
 }

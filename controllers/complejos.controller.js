@@ -47,39 +47,32 @@ const actualizarComplejo = async (req = request, res = response) => {
     }
 };
 
-
 const obtenerComplejos = async (req = request, res = response) => {
-
-    query = {}
-    const { desde, limit } = req.params
+    const { desde = 0, limit = 10 } = req.params;
+    const query = { 'cancha.eliminado': false };
 
     try {
-
         const [total, complejos] = await Promise.all([
-            Complejos.countDocuments(query),
-            Complejos.find(query)
+            Complejos.countDocuments(),
+            Complejos.find()
                 .populate('administrador')
                 .populate('canchas')
                 .skip(Number(desde))
                 .limit(Number(limit))
-        ])
+        ]);
 
         res.status(200).json({
             ok: true,
             total,
             complejos
-        })
-
+        });
     } catch (error) {
-
-        res.status(200).json({
+        res.status(500).json({
             ok: false,
             error
-        })
-
+        });
     }
-}
-
+};
 
 const obtenerComplejo = async (req = request, res = response) => {
     const { id } = req.params; // Este es el ID del usuario

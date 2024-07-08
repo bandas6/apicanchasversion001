@@ -1,5 +1,5 @@
 const { request, response } = require("express");
-const Complejos = require("../models/complejos");
+const mongoose = require('mongoose');
 const Reservas = require("../models/reservas");
 
 
@@ -30,17 +30,17 @@ const actualizarReserva = async (req = request, res = response) => {
 
     try {
         // Verificar si fechasDisponibles es un array válido
-        if (resto.horarios) {
-            if (!Array.isArray(resto.horarios)) {
-                return res.status(400).json({
-                    ok: false,
-                    msg: 'horarios debe ser un array de fechas válidas'
-                });
-            }
+        // if (resto.horarios) {
+        //     if (!Array.isArray(resto.horarios)) {
+        //         return res.status(400).json({
+        //             ok: false,
+        //             msg: 'horarios debe ser un array de fechas válidas'
+        //         });
+        //     }
 
-        }
+        // }
 
-        const reservas = await Reservas.findByIdAndUpdate(id, resto, { new: true });
+        const reservas = await Reservas.findByIdAndUpdate(id, { ...resto }, { new: true });
 
 
         res.status(200).json({
@@ -77,10 +77,10 @@ const actualizarHoraHorario = async (req = request, res = response) => {
 
         let horario;
 
-        if(tipoHorario === 'horarioUno'){
-            horario = reserva.horariosUno.id(horarioId);
-        }else{
-            horario = reserva.horariosDos.id(horarioId);
+        if (tipoHorario === 'horarioUno') {
+            horario = reserva.horariosUno.horario.id(horarioId);
+        } else {
+            horario = reserva.horariosDos.horario.id(horarioId);
         }
 
 
@@ -98,14 +98,23 @@ const actualizarHoraHorario = async (req = request, res = response) => {
         // Validar y combinar los usuarios
         if (usuarios) {
             if (Array.isArray(usuarios)) {
-                // Crear un Set con los usuarios existentes para evitar duplicados
-                const nuevosUsuariosSet = new Set(horario.usuarios);
 
-                // Añadir los nuevos usuarios al Set
-                usuarios.forEach(usuario => nuevosUsuariosSet.add(usuario));
+                if(usuarios.length > 0){
 
-                // Convertir el Set de vuelta a un array
-                horario.usuarios = Array.from(nuevosUsuariosSet);
+                    // Crear un Set con los usuarios existentes para evitar duplicados
+                    const nuevosUsuariosSet = new Set(horario.usuarios);
+    
+                    // Añadir los nuevos usuarios al Set
+                    usuarios.forEach(usuario => nuevosUsuariosSet.add(usuario));
+    
+                    // Convertir el Set de vuelta a un array
+                    horario.usuarios = Array.from(nuevosUsuariosSet);
+                    
+                }else{
+                    horario.usuarios = [];
+                }
+
+
             } else {
                 return res.status(400).json({
                     ok: false,
@@ -152,11 +161,11 @@ const actualizarEstadoUsuario = async (req = request, res = response) => {
 
         // Encontrar el horario dentro de la lista de horarios por su id
         let horario;
-        
-        if(tipoHorario === 'horarioUno'){
-            horario = reserva.horariosUno.id(horarioId);
-        }else{
-            horario = reserva.horariosDos.id(horarioId);
+
+        if (tipoHorario === 'horarioUno') {
+            horario = reserva.horariosUno.horario.id(horarioId);
+        } else {
+            horario = reserva.horariosUno.horario.id(horarioId);
         }
 
 
@@ -182,7 +191,7 @@ const actualizarEstadoUsuario = async (req = request, res = response) => {
 
         // Actualizar aceptad en usuarios
 
-        if (usuario && aceptado!== undefined) {
+        if (usuario && aceptado !== undefined) {
             usuario.aceptado = aceptado;
         }
         // Guardar los cambios en la reserva
@@ -203,38 +212,41 @@ const actualizarEstadoUsuario = async (req = request, res = response) => {
 };
 
 
-
 const obtenerReservasCancha = async (req = request, res = response) => {
-    const { id } = req.params
-    query = { cancha: id };
-    console.log(id)
+    const { id } = req.params;
+    const query = { cancha: id };
 
     try {
-
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
             Reservas.find(query)
                 .populate('complejo')
                 .populate('cancha')
-                .populate('horariosUno.usuarios.usuario')
-                .populate('horariosDos.usuarios.usuario')
-        ])
+                .populate('horariosUno.horario.usuarios.usuario')
+                .populate('horariosDos.horario.usuarios.usuario')
+                .lean() // Convertir documentos de Mongoose a objetos JS planos
+        ]);
+
+        // Ordenar las reservas por el campo diaDeLaSemana
+        const diasDeLaSemana = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+        const reservasOrdenadas = reservas.sort((a, b) => {
+            return diasDeLaSemana.indexOf(a.dia.toLowerCase()) - diasDeLaSemana.indexOf(b.dia.toLowerCase());
+        });
 
         res.status(200).json({
             ok: true,
             total,
-            reservas
-        })
-
+            reservas: reservasOrdenadas
+        });
     } catch (error) {
-
-        res.status(200).json({
+        res.status(500).json({
             ok: false,
-            error
-        })
-
+            error: error.message
+        });
     }
-}
+};
+
+
 
 const obtenerReservas = async (req = request, res = response) => {
     query = {};
@@ -291,6 +303,58 @@ const obtenerReserva = async (req = request, res = response) => {
 };
 
 
+const renombrarCampo = async (req = request, res = response) => {
+    const { id } = req.params;
+    const { reservas } = req.body; // El array de reservas a modificar
+
+    try {
+        // Conecta a la base de datos (asegúrate de usar la URL correcta de tu base de datos)
+        await mongoose.connect(process.env.MONGO_DBCNN, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true
+        });
+
+        // Encontrar la reserva por su ID
+        const reserva = await Reservas.findById(id);
+
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                msg: 'Reserva no encontrada'
+            });
+        }
+
+        // Renombrar campos en el array de reservas
+        for (let i = 0; i < reservas.length; i++) {
+            if (reservas[i].hasOwnProperty('horariosDos')) {
+                reservas[i].horariosUno = reservas[i].horariosDos;
+                delete reservas[i].horariosDos;
+            }
+        }
+
+        // Guardar los cambios en la base de datos
+        await reserva.save();
+
+        console.log('Campos renombrados en los horarios correctamente');
+        mongoose.disconnect();
+
+        res.status(200).json({
+            ok: true,
+            msg: 'Campos renombrados correctamente'
+        });
+
+    } catch (error) {
+        console.error('Error renombrando los campos:', error);
+        res.status(500).json({
+            ok: false,
+            error: 'Error interno del servidor'
+        });
+    }
+};
+
+
+
+
 module.exports = {
     guardarReserva,
     obtenerReserva,
@@ -298,5 +362,6 @@ module.exports = {
     actualizarReserva,
     obtenerReservas,
     actualizarHoraHorario,
-    actualizarEstadoUsuario
+    actualizarEstadoUsuario,
+    renombrarCampo
 }

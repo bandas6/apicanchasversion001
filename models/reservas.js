@@ -12,6 +12,13 @@ const HorarioSchema = new Schema({
         default: 1, // Por defecto, las horas están disponibles
         required: true
     },
+    guardado: {
+        type: Boolean,
+        default: false,
+    },
+    semana: {
+        type: String
+    },
     usuarios: [{
         usuario: {
             type: Schema.Types.ObjectId,
@@ -20,11 +27,12 @@ const HorarioSchema = new Schema({
         aceptado: {
             type: Boolean,
             default: false
+        },
+        fechaCreacion: {
+            type: Date,
+            default: Date.now
         }
-    }],
-    semana: {
-        type: String
-    }
+    }]
 });
 
 const ReservasSchema = new Schema({
@@ -37,12 +45,24 @@ const ReservasSchema = new Schema({
         default: Date.now
     },
     horariosUno: {
-        type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
-        default: [] // Por defecto, la lista de horarios es vacía
+        horario:{
+            type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
+            default: [] // Por defecto, la lista de horarios es vacía
+        },
+        guardado:{
+            type: Boolean,
+            default: false,
+        }
     },
     horariosDos: {
-        type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
-        default: [] // Por defecto, la lista de horarios es vacía
+        horario:{
+            type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
+            default: [] // Por defecto, la lista de horarios es vacía
+        },
+        guardado:{
+            type: Boolean,
+            default: false,
+        }
     },
     cancha: {
         type: Schema.Types.ObjectId,
@@ -51,7 +71,7 @@ const ReservasSchema = new Schema({
     complejo: {
         type: Schema.Types.ObjectId,
         ref: 'Complejo',
-    }
+    },
 });
 
 // Exportar el modelo
