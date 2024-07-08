@@ -61,6 +61,7 @@ const actualizarHoraHorario = async (req = request, res = response) => {
     const { id, horarioId } = req.params;
     const { estado, usuarios, tipoHorario } = req.body;
 
+    console.log("horarioId: ", horarioId)
     try {
         // Buscar la reserva por su id
         const reserva = await Reservas.findById(id);
@@ -147,7 +148,6 @@ const actualizarHoraHorario = async (req = request, res = response) => {
 const actualizarEstadoUsuario = async (req = request, res = response) => {
     const { idReserva, horarioId, usuarioId } = req.params;  // Añadido usuarioId para identificar al usuario específico
     const { estado, aceptado, tipoHorario } = req.body;  // Añadido aceptado para actualizar este campo
-    console.log(aceptado)
     try {
         // Buscar la reserva por su id
         const reserva = await Reservas.findById(idReserva);
@@ -165,7 +165,7 @@ const actualizarEstadoUsuario = async (req = request, res = response) => {
         if (tipoHorario === 'horarioUno') {
             horario = reserva.horariosUno.horario.id(horarioId);
         } else {
-            horario = reserva.horariosUno.horario.id(horarioId);
+            horario = reserva.horariosDos.horario.id(horarioId);
         }
 
 

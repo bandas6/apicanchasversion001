@@ -2,7 +2,7 @@ const { Router } = require("express");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
-const { obtenerSolicitud, obtenerSolicitudes, guardarSolicitud, actualizarSolicitud } = require("../controllers/solicitudes.controller");
+const { obtenerSolicitud, obtenerSolicitudes, guardarSolicitud, actualizarSolicitud, actualizarSolicitudConReservaId } = require("../controllers/solicitudes.controller");
 const { solicitudYaExiste } = require("../middlewares/validar-generales");
 
 
@@ -32,6 +32,14 @@ router.put('/:id', [
     // check('usuarios').custom(partidoExiste),
     validarCampos
 ], actualizarSolicitud
+);
+
+router.put('/actualizarConReserva/:reservaId', [
+    validarJWT,
+    check('reservaId', 'No es un id valido').isMongoId(),
+    // check('usuarios').custom(partidoExiste),
+    validarCampos
+], actualizarSolicitudConReservaId
 );
 
 

@@ -48,6 +48,41 @@ const actualizarSolicitud = async (req = request, res = response) => {
     }
 };
 
+const actualizarSolicitudConReservaId = async (req = request, res = response) => {
+    
+    const { reservaId } = req.params;
+    const { estado } = req.body;
+
+    try {
+
+        const solicitud = await Solicitudes.findOne({reservaId})
+        .populate('usuario'); // Aquí se debe usar Complejo en lugar de Complejos
+
+        if(!solicitud){
+            res.status(400).json({
+                ok: false,
+                msg: 'La solicitud no existe'
+            })
+            return;
+        }
+
+        solicitud.estado = estado;
+
+        await solicitud.save()
+
+        res.status(200).json({
+            ok: true,
+            solicitud
+        });
+
+    } catch (error) {
+        res.status(400).json({
+            ok: false,
+            error
+        });
+    }
+};
+
 
 const obtenerSolicitudes = async (req = request, res = response) => {
 
@@ -115,5 +150,6 @@ module.exports = {
     guardarSolicitud,
     obtenerSolicitudes,
     obtenerSolicitud,
-    actualizarSolicitud
+    actualizarSolicitud,
+    actualizarSolicitudConReservaId
 }
