@@ -2,7 +2,7 @@ const { Router } = require("express");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
-const { obtenerSolicitud, obtenerSolicitudes, guardarSolicitud, actualizarSolicitud, actualizarSolicitudConReservaId } = require("../controllers/solicitudes.controller");
+const { obtenerSolicitud, obtenerSolicitudes, guardarSolicitud, actualizarSolicitud, actualizarSolicitudConReservaId, obtenerSolicitudesComplejo } = require("../controllers/solicitudes.controller");
 const { solicitudYaExiste } = require("../middlewares/validar-generales");
 
 
@@ -13,6 +13,10 @@ const router = Router()
 router.get('/', [
     validarJWT
     ],obtenerSolicitudes);
+
+router.get('/solicitudesComplejo/:idComplejo', [
+    validarJWT
+    ],obtenerSolicitudesComplejo);
 
 router.get('/:id', [
     validarJWT,

@@ -120,6 +120,42 @@ const obtenerSolicitudes = async (req = request, res = response) => {
     }
 }
 
+const obtenerSolicitudesComplejo = async (req = request, res = response) => {
+
+    const { idComplejo } = req.params;
+
+    query = { complejo: idComplejo }
+    const { desde, limit } = req.params
+
+    try {
+
+        const [total, solicitudes] = await Promise.all([
+            Solicitudes.countDocuments(query),
+            Solicitudes.find(query)
+                .populate('usuario')
+                .populate('administrador')
+                .populate('complejo')
+                .populate('cancha')
+                .skip(Number(desde))
+                .limit(Number(limit))
+        ])
+
+        res.status(200).json({
+            ok: true,
+            total,
+            solicitudes
+        })
+
+    } catch (error) {
+
+        res.status(200).json({
+            ok: false,
+            error
+        })
+
+    }
+}
+
 
 const obtenerSolicitud = async (req = request, res = response) => {
     const { id } = req.params; // Este es el ID del usuario
@@ -150,6 +186,7 @@ module.exports = {
     guardarSolicitud,
     obtenerSolicitudes,
     obtenerSolicitud,
+    obtenerSolicitudesComplejo,
     actualizarSolicitud,
     actualizarSolicitudConReservaId
 }
