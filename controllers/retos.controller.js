@@ -104,62 +104,56 @@ const obtenerRetos = async (req = request, res = response) => {
     console.log(req.usuarioAuth._id); // Esto imprime el ID del usuario autenticado
 
     try {
-        const skip = parseInt(desde, 10) || 0;
-        const limitVal = parseInt(limit, 10) || 10;
+        const skip = Number.isNaN(parseInt(desde, 10)) ? 0 : parseInt(desde, 10);
+        const limitVal = Number.isNaN(parseInt(limit, 10)) ? 10 : parseInt(limit, 10);
 
         const usuarioId = req.usuarioAuth._id;
         let total, retos;
 
+        const populateOptions = [
+            {
+                path: 'usuario',
+                populate: {
+                    path: 'equipo_id',
+                    model: 'Equipo',
+                    select: 'nombre ciudad' // Seleccionar solo ciertos campos del Equipo
+                }
+            },
+            {
+                path: 'usuarioRetado',
+                populate: {
+                    path: 'equipo_id',
+                    model: 'Equipo',
+                    select: 'nombre ciudad' // Seleccionar solo ciertos campos del Equipo
+                }
+            }
+        ];
+
         if (tipoConsulta === 'enviadas') {
-            // Filtrar los retos enviados por el usuario autenticado
             [total, retos] = await Promise.all([
                 Retos.countDocuments({ usuario: usuarioId }),
                 Retos.find({ usuario: usuarioId })
                     .skip(skip)
                     .limit(limitVal)
-                    .populate({
-                        path: 'usuario',
-                        populate: {
-                            path: 'equipo_id',
-                            model: 'Equipo',
-                            select: 'nombre ciudad' // Seleccionar solo ciertos campos del Equipo
-                        }
-                    })
-                    .populate({
-                        path: 'usuarioRetado',
-                        populate: {
-                            path: 'equipo_id',
-                            model: 'Equipo',
-                            select: 'nombre ciudad' // Seleccionar solo ciertos campos del Equipo
-                        }
-                    })
+                    .populate(populateOptions)
             ]);
         } else if (tipoConsulta === 'recibidas') {
-            // Filtrar los retos recibidos por el usuario autenticado
             [total, retos] = await Promise.all([
                 Retos.countDocuments({ usuarioRetado: usuarioId }),
                 Retos.find({ usuarioRetado: usuarioId })
                     .skip(skip)
                     .limit(limitVal)
-                    .populate({
-                        path: 'usuario',
-                        populate: {
-                            path: 'equipo_id',
-                            model: 'Equipo',
-                            select: 'nombre ciudad' // Seleccionar solo ciertos campos del Equipo
-                        }
-                    })
-                    .populate({
-                        path: 'usuarioRetado',
-                        populate: {
-                            path: 'equipo_id',
-                            model: 'Equipo',
-                            select: 'nombre ciudad' // Seleccionar solo ciertos campos del Equipo
-                        }
-                    })
+                    .populate(populateOptions)
+            ]);
+        } else if (tipoConsulta === 'retosAbiertos') {
+            [total, retos] = await Promise.all([
+                Retos.countDocuments({ $or: [{ usuarioRetado: null }, { usuarioRetado: { $exists: false } }] }),
+                Retos.find({ $or: [{ usuarioRetado: null }, { usuarioRetado: { $exists: false } }] })
+                    .skip(skip)
+                    .limit(limitVal)
+                    .populate(populateOptions)
             ]);
         } else {
-            // Si tipoConsulta no es 'enviadas' ni 'recibidas', lanzar un error
             return res.status(400).json({
                 ok: false,
                 error: 'Tipo de consulta no válido'
@@ -180,7 +174,6 @@ const obtenerRetos = async (req = request, res = response) => {
         });
     }
 };
-
 
 
 const obtenerReto = async (req = request, res = response) => {

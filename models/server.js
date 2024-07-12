@@ -23,6 +23,7 @@ class Server {
             solicitudes: '/api/solicitudes',
             reservas: '/api/reservas',
             historialReservas: '/api/historial-reservas',
+            mensajes: '/api/mensajes',
         }
        
         
@@ -66,6 +67,7 @@ class Server {
         this.app.use(this.paths.solicitudes, require('../routes/solicitudes'));
         this.app.use(this.paths.reservas, require('../routes/reservas'));
         this.app.use(this.paths.historialReservas, require('../routes/historial-reserva'));
+        this.app.use(this.paths.mensajes, require('../routes/mensajes'));
     }
 
     listen() {
