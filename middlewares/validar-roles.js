@@ -20,21 +20,6 @@ const esAdminRol = (req, res = response, next) => {
 
 }
 
-const usuarioEsJugador = (req, res = response, next) => {
-
-    console.log(req.body)
-
-    // if(valoracion > 0){
-    //     if (rol !== 'GAMER_ROL') {
-    //         throw new Error('El usuario no tiene el rol de jugador');
-    //     }
-    // }
-
-    next()
-
-}
-
 module.exports = {
-    esAdminRol,
-    usuarioEsJugador
+    esAdminRol
 }

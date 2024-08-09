@@ -13,17 +13,7 @@ class Server {
         this.paths = {
             auth: '/api/auth',
             usuarios: '/api/usuarios',
-            deportes: '/api/deportes',
-            equipos: '/api/equipos',
-            listasMaestras: '/api/listas-maestras',
-            partidos: '/api/partidos',
-            complejos: '/api/complejos',
-            canchas: '/api/canchas',
-            retos: '/api/retos',
-            solicitudes: '/api/solicitudes',
-            reservas: '/api/reservas',
-            historialReservas: '/api/historial-reservas',
-            mensajes: '/api/mensajes',
+            categorias: '/api/categorias',
         }
        
         
@@ -55,19 +45,9 @@ class Server {
     }
 
     routes() {
-        this.app.use(this.paths.usuarios, require('../routes/usuarios'));
-        this.app.use(this.paths.auth, require('../routes/auth'));
-        this.app.use(this.paths.deportes, require('../routes/deportes'));
-        this.app.use(this.paths.equipos, require('../routes/equipos'));
-        this.app.use(this.paths.listasMaestras, require('../routes/listas-maestras'));
-        this.app.use(this.paths.partidos, require('../routes/partidos'));
-        this.app.use(this.paths.complejos, require('../routes/complejos'));
-        this.app.use(this.paths.canchas, require('../routes/canchas'));
-        this.app.use(this.paths.retos, require('../routes/retos'));
-        this.app.use(this.paths.solicitudes, require('../routes/solicitudes'));
-        this.app.use(this.paths.reservas, require('../routes/reservas'));
-        this.app.use(this.paths.historialReservas, require('../routes/historial-reserva'));
-        this.app.use(this.paths.mensajes, require('../routes/mensajes'));
+        this.app.use(this.paths.usuarios, require('../routes/usuarios.route'));
+        this.app.use(this.paths.auth, require('../routes/auth.route'));
+        this.app.use(this.paths.auth, require('../routes/categoria.route'));
     }
 
     listen() {
