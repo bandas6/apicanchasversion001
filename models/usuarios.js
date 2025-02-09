@@ -22,11 +22,17 @@ const UsuarioSchema = new Schema({
         type: String,
         // required: [true, 'La contraseña es obligatoria'],
     },
+    posicion: {
+        type: String,
+    },  
+    puntuacion: {
+        type: Number,
+    },
     valoracion: {
         type: Number,
         default: 0
     },
-    img: {
+    nombre_archivo_imagen: {
         type: String,
     },
     rol: {
@@ -54,9 +60,8 @@ const UsuarioSchema = new Schema({
 
 
 UsuarioSchema.methods.toJSON = function () {
-    const { __v, password, _id, estado, ...user } = this.toObject();
-    user.uid = _id;
-    return user;
+    const {__v, _id, ...usuario } = this.toObject();
+    usuario.uid = _id;
+    return usuario;
 }
-
 module.exports = model('Usuario', UsuarioSchema)

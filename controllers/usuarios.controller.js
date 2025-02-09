@@ -2,42 +2,38 @@ const { response } = require("express");
 const Usuarios = require("../models/usuarios");
 const bcryptjs = require('bcryptjs');
 
-// Obtener usuarios
 const obtenerUsuarios = async (req = require, res = response) => {
-
     try {
-
         const { limit = 0, desde = 0, rol } = req.query;
-        query = { estado: true }
+        const query = { estado: true };
 
         if (rol) {
             query.rol = rol;
-        }    
-    
+        }
+
         const [total, usuarios] = await Promise.all([
             Usuarios.countDocuments(query),
             Usuarios.find(query)
                 .skip(Number(desde))
                 .limit(Number(limit))
                 .populate('equipo_id')
-        ])
+                .select('-password') // Excluir el campo password directamente en la consulta
+                .select('__v') // Excluir el campo contrasenia directamente en la consulta
+        ]);
 
         return res.status(200).json({
             ok: true,
             total,
             usuarios
-        })
+        });
 
     } catch (error) {
-
-        return res.status(200).json({
+        return res.status(500).json({ // Usar 500 para errores del servidor
             ok: false,
-            error
-        })
-
+            error: error.message // Mejor solo enviar el mensaje de error
+        });
     }
-
-}
+};
 
 // Obtener usuario por id
 const obtenerUsuario = async (req = require, res = response) => {

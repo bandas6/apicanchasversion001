@@ -22,4 +22,10 @@ const MensajeSchema = new Schema({
     }
 });
 
+MensajeSchema.methods.toJSON = function () {
+    const { __v, _id, ...mensaje } = this.toObject();
+    mensaje.uid = _id;
+    return mensaje;
+}
+
 module.exports = model('Mensaje', MensajeSchema);

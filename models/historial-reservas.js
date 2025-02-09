@@ -15,5 +15,11 @@ const HistorialReservasSchema = new Schema({
     }
 });
 
+HistorialReservasSchema.methods.toJSON = function () {
+    const { __v, _id, ...historial } = this.toObject();
+    historial.uid = _id;
+    return historial;
+}
+
 // Exportar el modelo
 module.exports = model('HistorialReserva', HistorialReservasSchema);

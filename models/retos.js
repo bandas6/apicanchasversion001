@@ -43,11 +43,10 @@ const RetosSchema = new Schema({
 
 });
 
-
 RetosSchema.methods.toJSON = function () {
-    const { __v, _id, ...retos } = this.toObject();
-    retos.uid = _id;
-    return retos;
+    const { __v, _id, ...reto } = this.toObject();
+    reto.uid = _id;
+    return reto;
 }
 
 module.exports = model('Reto', RetosSchema)

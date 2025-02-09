@@ -74,6 +74,11 @@ const ReservasSchema = new Schema({
     },
 });
 
+ReservasSchema.methods.toJSON = function () {
+    const { __v, _id, ...reserva } = this.toObject();
+    reserva.uid = _id;
+    return reserva;
+}
+
 // Exportar el modelo
-const Reserva = mongoose.model('Reserva', ReservasSchema);
-module.exports = Reserva;
+module.exports = mongoose.model('Reserva', ReservasSchema);

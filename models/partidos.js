@@ -20,10 +20,10 @@ const PartidosSchema = new Schema({
 });
 
 
-// PartidosSchema.methods.toJSON = function () {
-//     const { __v, _id, ...partido } = this.toObject();
-//     partido.uid = _id;
-//     return equipo;
-// }
+PartidosSchema.methods.toJSON = function () {
+    const { __v, _id, ...partido } = this.toObject();
+    partido.uid = _id;
+    return partido;
+}
 
 module.exports = model('Partido', PartidosSchema)
