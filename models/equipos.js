@@ -5,7 +5,7 @@ const EquiposSchema = new Schema({
         type: String,
         required: [true, 'El nombre es obligatorio']
     },
-    img: { 
+    nombre_archivo_imagen: { 
         type: String,
     },
     estado: { 
@@ -13,6 +13,10 @@ const EquiposSchema = new Schema({
         default: true
     },
     valoracion: { 
+        type: Number,
+        default: 0
+    },   
+    puntuacion: { 
         type: Number,
         default: 0
     },

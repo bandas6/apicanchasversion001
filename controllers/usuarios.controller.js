@@ -65,8 +65,8 @@ const guardarUsuario = async (req = require, res = response) => {
 
     try {
 
-        const { nombre, apellido, correo, password, rol } = req.body;
-        const usuario = new Usuarios({ nombre, apellido, correo, password, rol });
+        const data = req.body;
+        const usuario = new Usuarios(data);
 
         // Ecriptar contraseña
         const salt = await bcryptjs.genSaltSync();
