@@ -4,12 +4,12 @@ const Schema = mongoose.Schema;
 const HorarioSchema = new Schema({
     hora: {
         type: String,
-        required: true // La hora es requerida
+        required: true
     },
     estado: {
         type: Number,
-        enum: [0, 1, 2, 3, 4], // 0: no disponible, 1: disponible 2:Solicitado 3:reservado 4:cancelado
-        default: 1, // Por defecto, las horas están disponibles
+        enum: [0, 1, 2, 3, 4],
+        default: 1,
         required: true
     },
     guardado: {
@@ -36,30 +36,60 @@ const HorarioSchema = new Schema({
 });
 
 const ReservasSchema = new Schema({
+    usuario: {
+        type: Schema.Types.ObjectId,
+        ref: 'Usuario',
+    },
     dia: {
         type: String,
-        enum: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'],
+        enum: ['Lunes', 'Martes', 'MiÃ©rcoles', 'Jueves', 'Viernes', 'SÃ¡bado', 'Domingo'],
+    },
+    fecha: {
+        type: Date,
     },
     fechaCreacion: {
         type: Date,
         default: Date.now
     },
+    horaInicio: {
+        type: String,
+    },
+    horaFin: {
+        type: String,
+    },
+    deporte: {
+        type: Schema.Types.ObjectId,
+        ref: 'Deporte',
+    },
+    estado: {
+        type: String,
+        enum: ['pendiente', 'confirmada', 'cancelada', 'completada'],
+        default: 'pendiente',
+    },
+    observaciones: {
+        type: String,
+        trim: true,
+    },
+    precioTotal: {
+        type: Number,
+        default: 0,
+    },
     horariosUno: {
-        horario:{
-            type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
-            default: [] // Por defecto, la lista de horarios es vacía
+        horario: {
+            type: [HorarioSchema],
+            default: []
         },
-        guardado:{
+        guardado: {
             type: Boolean,
             default: false,
         }
     },
     horariosDos: {
-        horario:{
-            type: [HorarioSchema], // Lista de horarios basada en el subesquema HorarioSchema
-            default: [] // Por defecto, la lista de horarios es vacía
+        horario: {
+            type: [HorarioSchema],
+            default: []
         },
-        guardado:{
+        guardado: {
             type: Boolean,
             default: false,
         }
@@ -80,5 +110,4 @@ ReservasSchema.methods.toJSON = function () {
     return reserva;
 }
 
-// Exportar el modelo
 module.exports = mongoose.model('Reserva', ReservasSchema);

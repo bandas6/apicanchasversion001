@@ -1,216 +1,219 @@
 const { request, response } = require("express");
-const mongoose = require('mongoose');
 const Reservas = require("../models/reservas");
+const Canchas = require("../models/canchas");
+const Usuarios = require("../models/usuarios");
+require("../models/deportes");
 
+const parseHourToMinutes = (value = '') => {
+    const [hour = '0', minute = '0'] = String(value).split(':');
+    return (Number(hour) * 60) + Number(minute);
+};
+
+const hasTimeConflict = ({ startA, endA, startB, endB }) => {
+    return startA < endB && startB < endA;
+};
+
+const getDayOfWeek = (date) => {
+    const jsDay = new Date(date).getDay();
+    return jsDay === 0 ? 7 : jsDay;
+};
+
+const calculateReservaPrice = ({ cancha, fecha, horaInicio, horaFin }) => {
+    const startMinutes = parseHourToMinutes(horaInicio);
+    const endMinutes = parseHourToMinutes(horaFin);
+    const durationHours = (endMinutes - startMinutes) / 60;
+    const diaSemana = getDayOfWeek(fecha);
+    const tarifas = Array.isArray(cancha.tarifas) ? cancha.tarifas : [];
+
+    const tarifaAplicable = tarifas.find((tarifa) => {
+        if (!tarifa.activo || tarifa.diaSemana !== diaSemana) {
+            return false;
+        }
+
+        const tarifaInicio = parseHourToMinutes(tarifa.horaInicio);
+        const tarifaFin = parseHourToMinutes(tarifa.horaFin);
+
+        return startMinutes >= tarifaInicio && endMinutes <= tarifaFin;
+    });
+
+    if (tarifaAplicable) {
+        return Number((durationHours * Number(tarifaAplicable.precio || 0)).toFixed(2));
+    }
+
+    return Number((durationHours * Number(cancha.precioHora || 0)).toFixed(2));
+};
 
 const guardarReserva = async (req = request, res = response) => {
     try {
         const data = req.body;
-        const reserva = new Reservas(data); // Aquí se debe usar Cancha en lugar de Canchas
 
-        // Guardar en la base de datos
-        await reserva.save(); // Aquí se debe usar cancha en lugar de partido
+        if (!data.fecha || !data.horaInicio || !data.horaFin) {
+            return res.status(400).json({
+                ok: false,
+                error: 'fecha, horaInicio y horaFin son obligatorios'
+            });
+        }
 
-        res.status(200).json({
+        const startMinutes = parseHourToMinutes(data.horaInicio);
+        const endMinutes = parseHourToMinutes(data.horaFin);
+
+        if (endMinutes <= startMinutes) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La hora de fin debe ser mayor a la hora de inicio'
+            });
+        }
+
+        const reservaDate = new Date(data.fecha);
+        const startOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate());
+        const endOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate() + 1);
+
+        const reservasExistentes = await Reservas.find({
+            cancha: data.cancha,
+            fecha: {
+                $gte: startOfDay,
+                $lt: endOfDay,
+            },
+            estado: { $in: ['pendiente', 'confirmada'] },
+        });
+
+        const hayConflicto = reservasExistentes.some((item) => {
+            const existingStart = parseHourToMinutes(item.horaInicio);
+            const existingEnd = parseHourToMinutes(item.horaFin);
+
+            return hasTimeConflict({
+                startA: startMinutes,
+                endA: endMinutes,
+                startB: existingStart,
+                endB: existingEnd,
+            });
+        });
+
+        if (hayConflicto) {
+            return res.status(409).json({
+                ok: false,
+                error: 'Ya existe una reserva en ese rango horario para esta cancha'
+            });
+        }
+
+        if (data.usuario) {
+            const usuario = await Usuarios.findById(data.usuario);
+
+            if (!usuario || !usuario.estado) {
+                return res.status(404).json({
+                    ok: false,
+                    error: 'Usuario no encontrado o inactivo'
+                });
+            }
+
+            if (usuario.rol !== 'USER_ROL') {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'Solo se pueden asignar reservas a usuarios con USER_ROL'
+                });
+            }
+
+            const reservaActivaExistente = await Reservas.findOne({
+                usuario: data.usuario,
+                estado: { $in: ['pendiente', 'confirmada'] },
+            });
+
+            if (reservaActivaExistente) {
+                return res.status(409).json({
+                    ok: false,
+                    error: 'Este usuario ya tiene una reserva activa y no puede crear otra hasta finalizarla o cancelarla'
+                });
+            }
+        }
+
+        const cancha = await Canchas.findById(data.cancha);
+
+        if (!cancha) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Cancha no encontrada'
+            });
+        }
+
+        const complejo = data.complejo
+            ? await require("../models/complejos").findById(data.complejo)
+            : null;
+
+        if (data.usuario && complejo) {
+            const limiteDiario = Number(complejo.maxReservasPorUsuarioPorDia || 1);
+
+            const reservasActivasDelDia = await Reservas.countDocuments({
+                usuario: data.usuario,
+                complejo: complejo._id,
+                fecha: {
+                    $gte: startOfDay,
+                    $lt: endOfDay,
+                },
+                estado: { $in: ['pendiente', 'confirmada'] },
+            });
+
+            if (reservasActivasDelDia >= limiteDiario) {
+                return res.status(409).json({
+                    ok: false,
+                    error: `Este usuario ya alcanzo el maximo de ${limiteDiario} reserva(s) activa(s) para este dia en el complejo`
+                });
+            }
+        }
+
+        const precioTotal = calculateReservaPrice({
+            cancha,
+            fecha: data.fecha,
+            horaInicio: data.horaInicio,
+            horaFin: data.horaFin,
+        });
+
+        const reserva = new Reservas({
+            ...data,
+            precioTotal,
+        });
+
+        await reserva.save();
+
+        return res.status(201).json({
             ok: true,
             reserva
         });
-
     } catch (error) {
-        res.status(400).json({
+        return res.status(400).json({
             ok: false,
-            error
+            error: error.message
         });
     }
 };
 
 const actualizarReserva = async (req = request, res = response) => {
     const { id } = req.params;
-    const { dia, ...resto } = req.body;
 
     try {
-        // Verificar si fechasDisponibles es un array válido
-        // if (resto.horarios) {
-        //     if (!Array.isArray(resto.horarios)) {
-        //         return res.status(400).json({
-        //             ok: false,
-        //             msg: 'horarios debe ser un array de fechas válidas'
-        //         });
-        //     }
+        const reservas = await Reservas.findByIdAndUpdate(id, { ...req.body }, { new: true })
+            .populate('usuario')
+            .populate('complejo')
+            .populate('cancha')
+            .populate('deporte');
 
-        // }
+        if (!reservas) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada'
+            });
+        }
 
-        const reservas = await Reservas.findByIdAndUpdate(id, { ...resto }, { new: true });
-
-
-        res.status(200).json({
+        return res.status(200).json({
             ok: true,
             reservas
         });
-
     } catch (error) {
-        console.error('Error al actualizar la cancha:', error);
-        res.status(500).json({
+        return res.status(500).json({
             ok: false,
-            error: 'Error interno del servidor'
-        });
-    }
-};
-
-const actualizarHoraHorario = async (req = request, res = response) => {
-    const { id, horarioId } = req.params;
-    const { estado, usuarios, tipoHorario } = req.body;
-
-    console.log("horarioId: ", horarioId)
-    try {
-        // Buscar la reserva por su id
-        const reserva = await Reservas.findById(id);
-
-        if (!reserva) {
-            console.log('Reserva no encontrada');
-            return res.status(404).json({
-                ok: false,
-                msg: 'Reserva no encontrada'
-            });
-        }
-
-        // Encontrar el horario dentro de la lista de horarios por su id
-
-        let horario;
-
-        if (tipoHorario === 'horarioUno') {
-            horario = reserva.horariosUno.horario.id(horarioId);
-        } else {
-            horario = reserva.horariosDos.horario.id(horarioId);
-        }
-
-
-        if (!horario) {
-            console.log('Horario no encontrado');
-            return res.status(404).json({
-                ok: false,
-                msg: 'Horario no encontrado'
-            });
-        }
-
-        // Actualizar el estado del horario
-        horario.estado = estado;
-
-        // Validar y combinar los usuarios
-        if (usuarios) {
-            if (Array.isArray(usuarios)) {
-
-                if(usuarios.length > 0){
-
-                    // Crear un Set con los usuarios existentes para evitar duplicados
-                    const nuevosUsuariosSet = new Set(horario.usuarios);
-    
-                    // Añadir los nuevos usuarios al Set
-                    usuarios.forEach(usuario => nuevosUsuariosSet.add(usuario));
-    
-                    // Convertir el Set de vuelta a un array
-                    horario.usuarios = Array.from(nuevosUsuariosSet);
-                    
-                }else{
-                    horario.usuarios = [];
-                }
-
-
-            } else {
-                return res.status(400).json({
-                    ok: false,
-                    msg: 'usuarios debe ser un array de IDs válidos'
-                });
-            }
-        }
-
-        // Guardar los cambios en la reserva
-        await reserva.save();
-
-        console.log('Hora del horario actualizada correctamente');
-
-        res.status(200).json({
-            ok: true,
-            reserva
-        });
-
-    } catch (error) {
-        console.error('Error actualizando la hora del horario:', error);
-        res.status(500).json({
-            ok: false,
-            msg: 'Error actualizando la hora del horario',
             error: error.message
         });
     }
 };
-
-
-const actualizarEstadoUsuario = async (req = request, res = response) => {
-    const { idReserva, horarioId, usuarioId } = req.params;  // Añadido usuarioId para identificar al usuario específico
-    const { estado, aceptado, tipoHorario } = req.body;  // Añadido aceptado para actualizar este campo
-    try {
-        // Buscar la reserva por su id
-        const reserva = await Reservas.findById(idReserva);
-
-        if (!reserva) {
-            return res.status(404).json({
-                ok: false,
-                msg: 'Reserva no encontrada'
-            });
-        }
-
-        // Encontrar el horario dentro de la lista de horarios por su id
-        let horario;
-
-        if (tipoHorario === 'horarioUno') {
-            horario = reserva.horariosUno.horario.id(horarioId);
-        } else {
-            horario = reserva.horariosDos.horario.id(horarioId);
-        }
-
-
-        if (!horario) {
-            return res.status(404).json({
-                ok: false,
-                msg: 'Horario no encontrado'
-            });
-        }
-
-        // Actualizar el estado del horario si se proporciona
-        if (estado !== undefined) {
-            if (![0, 1, 2, 3].includes(estado)) {
-                return res.status(400).json({
-                    ok: false,
-                    msg: 'Estado no válido'
-                });
-            }
-            horario.estado = estado;
-        }
-
-        const usuario = horario.usuarios.id(usuarioId)
-
-        // Actualizar aceptad en usuarios
-
-        if (usuario && aceptado !== undefined) {
-            usuario.aceptado = aceptado;
-        }
-        // Guardar los cambios en la reserva
-        await reserva.save();
-
-        res.status(200).json({
-            ok: true,
-            reserva
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            ok: false,
-            msg: 'Error actualizando la hora del horario',
-            error: error.message
-        });
-    }
-};
-
 
 const obtenerReservasCancha = async (req = request, res = response) => {
     const { id } = req.params;
@@ -220,140 +223,88 @@ const obtenerReservasCancha = async (req = request, res = response) => {
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
             Reservas.find(query)
+                .populate('usuario')
                 .populate('complejo')
                 .populate('cancha')
-                .populate('horariosUno.horario.usuarios.usuario')
-                .populate('horariosDos.horario.usuarios.usuario')
-                .lean() // Convertir documentos de Mongoose a objetos JS planos
+                .populate('deporte')
+                .sort({ fecha: 1, horaInicio: 1 })
         ]);
 
-        // Ordenar las reservas por el campo diaDeLaSemana
-        const diasDeLaSemana = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
-        const reservasOrdenadas = reservas.sort((a, b) => {
-            return diasDeLaSemana.indexOf(a.dia.toLowerCase()) - diasDeLaSemana.indexOf(b.dia.toLowerCase());
-        });
-
-        res.status(200).json({
+        return res.status(200).json({
             ok: true,
             total,
-            reservas: reservasOrdenadas
+            reservas
         });
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             ok: false,
             error: error.message
         });
     }
 };
 
-
-
 const obtenerReservas = async (req = request, res = response) => {
-    query = {};
-    const { desde, limit, idCancha } = req.params
+    const query = {};
+    const { cancha, complejo, usuario, estado } = req.query;
+
+    if (cancha) query.cancha = cancha;
+    if (complejo) query.complejo = complejo;
+    if (usuario) query.usuario = usuario;
+    if (estado) query.estado = estado;
 
     try {
-
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
             Reservas.find(query)
+                .populate('usuario')
                 .populate('complejo')
                 .populate('cancha')
-        ])
+                .populate('deporte')
+                .sort({ fecha: 1, horaInicio: 1 })
+        ]);
 
-        res.status(200).json({
+        return res.status(200).json({
             ok: true,
             total,
             reservas
-        })
-
+        });
     } catch (error) {
-
-        res.status(200).json({
+        return res.status(500).json({
             ok: false,
-            error
-        })
-
+            error: error.message
+        });
     }
 }
 
-
 const obtenerReserva = async (req = request, res = response) => {
-    const { id } = req.params; // Este es el ID del usuario
-    const { tipo } = req.query;
-
-    try {
-        // Obtener el partido por ID y poblar las referencias
-        const reserva = await Reservas.findById(id)
-            .exec();
-
-        // Combinamos la información obtenida
-        res.status(200).json({
-            ok: true,
-            total: reserva ? 1 : 0,
-            reserva
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            ok: false,
-            error: 'Error interno del servidor'
-        });
-    }
-};
-
-
-const renombrarCampo = async (req = request, res = response) => {
     const { id } = req.params;
-    const { reservas } = req.body; // El array de reservas a modificar
 
     try {
-        // Conecta a la base de datos (asegúrate de usar la URL correcta de tu base de datos)
-        await mongoose.connect(process.env.MONGO_DBCNN, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true
-        });
-
-        // Encontrar la reserva por su ID
-        const reserva = await Reservas.findById(id);
+        const reserva = await Reservas.findById(id)
+            .populate('usuario')
+            .populate('complejo')
+            .populate('cancha')
+            .populate('deporte');
 
         if (!reserva) {
             return res.status(404).json({
                 ok: false,
-                msg: 'Reserva no encontrada'
+                error: 'Reserva no encontrada'
             });
         }
 
-        // Renombrar campos en el array de reservas
-        for (let i = 0; i < reservas.length; i++) {
-            if (reservas[i].hasOwnProperty('horariosDos')) {
-                reservas[i].horariosUno = reservas[i].horariosDos;
-                delete reservas[i].horariosDos;
-            }
-        }
-
-        // Guardar los cambios en la base de datos
-        await reserva.save();
-
-        console.log('Campos renombrados en los horarios correctamente');
-        mongoose.disconnect();
-
-        res.status(200).json({
+        return res.status(200).json({
             ok: true,
-            msg: 'Campos renombrados correctamente'
+            total: 1,
+            reserva
         });
-
     } catch (error) {
-        console.error('Error renombrando los campos:', error);
-        res.status(500).json({
+        return res.status(500).json({
             ok: false,
-            error: 'Error interno del servidor'
+            error: error.message
         });
     }
 };
-
-
-
 
 module.exports = {
     guardarReserva,
@@ -361,7 +312,4 @@ module.exports = {
     obtenerReservasCancha,
     actualizarReserva,
     obtenerReservas,
-    actualizarHoraHorario,
-    actualizarEstadoUsuario,
-    renombrarCampo
 }

@@ -1,108 +1,198 @@
 const { request, response } = require("express");
 const Complejos = require("../models/complejos");
+const Canchas = require("../models/canchas");
+require("../models/deportes");
 
+const normalizarPayloadComplejo = (data = {}) => {
+    const payload = { ...data };
+    const latitudNumerica = Number(payload.latitud);
+    const longitudNumerica = Number(payload.longitud);
+
+    if (
+        (!payload.ubicacionGeo || typeof payload.ubicacionGeo !== 'object') &&
+        Number.isFinite(latitudNumerica) &&
+        Number.isFinite(longitudNumerica)
+    ) {
+        payload.ubicacionGeo = {
+            lat: latitudNumerica,
+            lng: longitudNumerica,
+        };
+    }
+
+    if (payload.administradores?.length) {
+        payload.administradores = payload.administradores;
+    } else if (payload.administrador) {
+        payload.administradores = [payload.administrador];
+    }
+
+    if (payload.rating === '' || payload.rating === undefined) {
+        delete payload.rating;
+    } else if (payload.rating !== null) {
+        payload.rating = Number(payload.rating);
+    }
+
+    if (payload.totalResenas === '' || payload.totalResenas === undefined) {
+        delete payload.totalResenas;
+    } else if (payload.totalResenas !== null) {
+        payload.totalResenas = Number(payload.totalResenas);
+    }
+
+    if (
+        payload.maxReservasPorUsuarioPorDia === '' ||
+        payload.maxReservasPorUsuarioPorDia === undefined
+    ) {
+        delete payload.maxReservasPorUsuarioPorDia;
+    } else if (payload.maxReservasPorUsuarioPorDia !== null) {
+        payload.maxReservasPorUsuarioPorDia = Number(payload.maxReservasPorUsuarioPorDia);
+    }
+
+    return payload;
+};
 
 const guardarComplejo = async (req = request, res = response) => {
     try {
-        const data = req.body;
-        const complejo = new Complejos(data); // Aquí se debe usar Complejo en lugar de Complejos
+        const data = normalizarPayloadComplejo(req.body);
+        const complejo = new Complejos(data);
 
-        // Guardar en la base de datos
-        await complejo.save(); // Aquí se debe usar complejo en lugar de partido
+        await complejo.save();
 
-        res.status(200).json({
+        return res.status(201).json({
             ok: true,
             complejo
         });
-
     } catch (error) {
-        res.status(400).json({
+        return res.status(400).json({
             ok: false,
-            error
+            error: error.message
         });
     }
 };
 
-
 const actualizarComplejo = async (req = request, res = response) => {
-    
     const { id } = req.params;
 
     try {
-        const data = req.body;
-
+        const data = normalizarPayloadComplejo(req.body);
         const complejo = await Complejos.findByIdAndUpdate(id, data, { new: true })
-        .populate('administrador'); // Aquí se debe usar Complejo en lugar de Complejos
+            .populate('administrador')
+            .populate('administradores')
+            .populate('deportes')
+            .populate('canchas');
 
-        res.status(200).json({
+        if (!complejo) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Complejo no encontrado'
+            });
+        }
+
+        return res.status(200).json({
             ok: true,
             complejo
         });
-
     } catch (error) {
-        res.status(400).json({
+        return res.status(400).json({
             ok: false,
-            error
+            error: error.message
         });
     }
 };
 
 const obtenerComplejos = async (req = request, res = response) => {
-    const { desde = 0, limit = 10 } = req.params;
-    const query = { 'cancha.eliminado': false };
+    const { desde = 0, limit = 20, administrador } = req.query;
+    const query = { estado: true };
+
+    if (administrador) {
+        query.$or = [
+            { administrador },
+            { administradores: administrador },
+        ];
+    }
 
     try {
         const [total, complejos] = await Promise.all([
-            Complejos.countDocuments(),
-            Complejos.find()
+            Complejos.countDocuments(query),
+            Complejos.find(query)
                 .populate('administrador')
+                .populate('administradores')
+                .populate('deportes')
                 .populate('canchas')
                 .skip(Number(desde))
                 .limit(Number(limit))
         ]);
 
-        res.status(200).json({
+        return res.status(200).json({
             ok: true,
             total,
             complejos
         });
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             ok: false,
-            error
+            error: error.message
         });
     }
 };
 
 const obtenerComplejo = async (req = request, res = response) => {
-    const { id } = req.params; // Este es el ID del usuario
+    const { id } = req.params;
 
     try {
-        // Obtener el partido por ID y poblar las referencias
         const complejo = await Complejos.findById(id)
             .populate('administrador')
-            .populate('canchas')
-            .exec();
+            .populate('administradores')
+            .populate('deportes')
+            .populate('canchas');
 
-        // Combinamos la información obtenida
-        res.status(200).json({
+        if (!complejo) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Complejo no encontrado'
+            });
+        }
+
+        return res.status(200).json({
             ok: true,
-            total: complejo ? 1 : 0,
+            total: 1,
             complejo
         });
-
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             ok: false,
-            error: 'Error interno del servidor'
+            error: error.message
         });
     }
 };
 
+const obtenerCanchasPorComplejo = async (req = request, res = response) => {
+    const { id } = req.params;
+
+    try {
+        const canchas = await Canchas.find({
+            complejo: id,
+            eliminado: false,
+        })
+            .populate('complejo')
+            .populate('deporte')
+            .populate('deportes');
+
+        return res.status(200).json({
+            ok: true,
+            total: canchas.length,
+            canchas
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message
+        });
+    }
+};
 
 module.exports = {
     guardarComplejo,
     obtenerComplejos,
     obtenerComplejo,
+    obtenerCanchasPorComplejo,
     actualizarComplejo
 }

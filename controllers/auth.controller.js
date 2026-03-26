@@ -42,13 +42,15 @@ const login = async (req = require, res = response) => {
         return res.status(200).json({
             usuario,
             token,
-            ok: false
+            ok: true
         })
 
     } catch (error) {
+        console.error('Error en login:', error);
 
         return res.status(500).json({
-            msg: 'Hable con el administrador'
+            msg: error?.message || error || 'Hable con el administrador',
+            ok: false
         })
 
     }

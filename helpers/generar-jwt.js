@@ -4,6 +4,10 @@ const generarJWT = ( uid = '' ) => {
 
 
     return new Promise( (resolve, reject) => {
+        if (!process.env.SECRETORPRIVATEKEY) {
+            reject('SECRETORPRIVATEKEY no esta configurada');
+            return;
+        }
 
         const payload = { uid };
         jwt.sign( payload, process.env.SECRETORPRIVATEKEY, 

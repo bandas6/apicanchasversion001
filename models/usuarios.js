@@ -32,6 +32,30 @@ const UsuarioSchema = new Schema({
         type: Number,
         default: 0
     },
+    bio: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    ciudad: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    nivelJuego: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    deportesFavoritos: [{
+        type: String,
+        trim: true,
+    }],
+    fotoUrl: {
+        type: String,
+        trim: true,
+        default: '',
+    },
     nombre_archivo_imagen: {
         type: String,
     },
@@ -60,7 +84,8 @@ const UsuarioSchema = new Schema({
 
 
 UsuarioSchema.methods.toJSON = function () {
-    const {__v, _id, ...usuario } = this.toObject();
+    const { __v, _id, password, ...usuario } = this.toObject();
+    usuario.imagenUrl = usuario.fotoUrl || usuario.nombre_archivo_imagen || '';
     usuario.uid = _id;
     return usuario;
 }

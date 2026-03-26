@@ -1,5 +1,5 @@
 const { Router } = require("express");
-const { guardarEquipo, obtenerEquipos, obtenerEquipo, actualizarEquipo, eliminarEquipo } = require("../controllers/equipos.controller");
+const { guardarEquipo, obtenerEquipos, obtenerEquiposDestacados, obtenerEquipo, obtenerJugadoresPorEquipo, actualizarEquipo, eliminarEquipo } = require("../controllers/equipos.controller");
 const { validarJWT } = require("../middlewares/validar-jwt");
 const { check } = require("express-validator");
 const { validarCampos } = require("../middlewares/validar-campos");
@@ -10,6 +10,13 @@ const router = Router()
 
 
 router.get('/', obtenerEquipos);
+
+router.get('/destacados', obtenerEquiposDestacados);
+
+router.get('/:id/jugadores', [
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos
+], obtenerJugadoresPorEquipo);
 
 router.get('/:id', [
     validarJWT,

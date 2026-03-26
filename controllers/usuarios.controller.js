@@ -2,6 +2,35 @@ const { response } = require("express");
 const Usuarios = require("../models/usuarios");
 const bcryptjs = require('bcryptjs');
 
+const normalizarPayloadUsuario = (data = {}) => {
+    const payload = { ...data };
+
+    ['nombre', 'apellido', 'correo', 'posicion', 'bio', 'ciudad', 'nivelJuego', 'fotoUrl', 'nombre_archivo_imagen']
+        .forEach((key) => {
+            if (typeof payload[key] === 'string') {
+                payload[key] = payload[key].trim();
+            }
+        });
+
+    if (payload.deportesFavoritos === '' || payload.deportesFavoritos == null) {
+        payload.deportesFavoritos = [];
+    } else if (Array.isArray(payload.deportesFavoritos)) {
+        payload.deportesFavoritos = payload.deportesFavoritos
+            .map((item) => String(item).trim())
+            .filter(Boolean);
+    }
+
+    if (payload.puntuacion !== undefined) {
+        payload.puntuacion = Number(payload.puntuacion || 0);
+    }
+
+    if (payload.valoracion !== undefined) {
+        payload.valoracion = Number(payload.valoracion || 0);
+    }
+
+    return payload;
+};
+
 const obtenerUsuarios = async (req = require, res = response) => {
     try {
         const { limit = 0, desde = 0, rol } = req.query;
@@ -51,9 +80,9 @@ const obtenerUsuario = async (req = require, res = response) => {
 
     } catch (error) {
 
-        return res.status(200).json({
+        return res.status(500).json({
             ok: false,
-            error
+            error: error.message
         })
 
     }
@@ -65,27 +94,25 @@ const guardarUsuario = async (req = require, res = response) => {
 
     try {
 
-        const data = req.body;
+        const data = normalizarPayloadUsuario(req.body);
         const usuario = new Usuarios(data);
 
         // Ecriptar contraseña
         const salt = await bcryptjs.genSaltSync();
-        usuario.password = bcryptjs.hashSync(password, salt);
+        usuario.password = bcryptjs.hashSync(data.password, salt);
 
         //guardar en DB
         await usuario.save();
-        delete usuario.password
-
-        res.status(200).json({
+        res.status(201).json({
             ok: true,
             usuario
         })
 
     } catch (error) {
 
-        res.status(200).json({
+        res.status(500).json({
             ok: false,
-            error
+            error: error.message
         })
 
 
@@ -99,7 +126,8 @@ const actualizarUsuario = async (req = require, res = response) => {
     try {
 
         const { id } = req.params;
-        const { _id, password, google, correo, ...resto } = req.body;
+        const { _id, password, google, correo, ...restoRaw } = req.body;
+        const resto = normalizarPayloadUsuario(restoRaw);
 
         if (password) {
             const salt = await bcryptjs.genSaltSync();
@@ -116,9 +144,9 @@ const actualizarUsuario = async (req = require, res = response) => {
 
     } catch (error) {
 
-        res.status(200).json({
+        res.status(500).json({
             ok: false,
-            error
+            error: error.message
         })
 
     }
@@ -140,9 +168,9 @@ const eliminarUsuario = async (req = require, res = response) => {
 
     } catch (error) {
 
-        res.status(200).json({
+        res.status(500).json({
             ok: false,
-            error
+            error: error.message
         })
 
     }

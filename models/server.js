@@ -27,9 +27,6 @@ class Server {
         }
        
         
-        // Connected DB
-        this.conectarDB();
-
         // middlewares
         this.middlewares();
 
@@ -70,7 +67,8 @@ class Server {
         this.app.use(this.paths.mensajes, require('../routes/mensajes'));
     }
 
-    listen() {
+    async listen() {
+        await this.conectarDB();
         this.app.listen(this.port, () => {
             console.log(`Server is running on port ${this.port}`);
         });

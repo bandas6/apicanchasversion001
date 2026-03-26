@@ -16,9 +16,9 @@ const usuarioExiste = async (correo) => {
 
 }
 
-const equipoExiste = async (equipos) => {
+const equipoExiste = async (nombre) => {
 
-    const equipo = await Equipos.findOne({ equipos });
+    const equipo = await Equipos.findOne({ nombre });
 
     if (equipo) {
         throw new Error(`El nombre ${equipo.nombre} ya existe`);
