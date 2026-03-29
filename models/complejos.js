@@ -75,6 +75,10 @@ const ComplejosSchema = new Schema({
     img: {
         type: String,
     },
+    imagenes: [{
+        type: String,
+        trim: true,
+    }],
     rating: {
         type: Number,
         min: 0,

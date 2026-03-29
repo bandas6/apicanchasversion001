@@ -1,6 +1,7 @@
 const { Router } = require("express");
 const { nombreComplejoExise } = require("../helpers/db-validators");
 const { validarCampos } = require("../middlewares/validar-campos");
+const { uploadMemory } = require("../middlewares/upload-memory");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
 const {
@@ -29,6 +30,10 @@ router.get('/:id',
 router.post('/', [
     validarJWT,
     puedeGestionarComplejo,
+    uploadMemory.fields([
+        { name: 'portada', maxCount: 1 },
+        { name: 'galeria', maxCount: 8 },
+    ]),
     check('nombre').custom(nombreComplejoExise),
     validarCampos
 ], guardarComplejo);
@@ -36,6 +41,10 @@ router.post('/', [
 router.put('/:id', [
     validarJWT,
     puedeGestionarComplejo,
+    uploadMemory.fields([
+        { name: 'portada', maxCount: 1 },
+        { name: 'galeria', maxCount: 8 },
+    ]),
     validarCampos
 ], actualizarComplejo);
 

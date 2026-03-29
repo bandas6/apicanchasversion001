@@ -2,6 +2,7 @@ const { request, response } = require("express");
 const Complejos = require("../models/complejos");
 const Canchas = require("../models/canchas");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
+const { uploadBufferToCloudinary } = require("../helpers/cloudinary");
 require("../models/deportes");
 
 const normalizarPayloadComplejo = (data = {}) => {
@@ -47,14 +48,138 @@ const normalizarPayloadComplejo = (data = {}) => {
         payload.maxReservasPorUsuarioPorDia = Number(payload.maxReservasPorUsuarioPorDia);
     }
 
+    if (typeof payload.imagenesActualesJson === 'string') {
+        try {
+            const parsed = JSON.parse(payload.imagenesActualesJson);
+            payload.imagenes = Array.isArray(parsed)
+                ? parsed.map((item) => String(item || '').trim()).filter(Boolean)
+                : [];
+        } catch (_) {
+            payload.imagenes = [];
+        }
+    } else if (Array.isArray(payload.imagenes)) {
+        payload.imagenes = payload.imagenes
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    }
+
     return payload;
+};
+
+const buildCloudinaryPublicId = (...parts) =>
+    parts
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .join('-')
+        .replace(/[^a-zA-Z0-9-_]/g, '_');
+
+const uploadImageIfPresent = async ({ file, folder, publicId }) => {
+    if (!file?.buffer) {
+        return null;
+    }
+
+    const result = await uploadBufferToCloudinary({
+        buffer: file.buffer,
+        folder,
+        publicId,
+    });
+
+    return result?.secure_url || '';
+};
+
+const uploadManyImages = async ({ files = [], folder, publicIdPrefix }) => {
+    const uploaded = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        if (!file?.buffer) continue;
+
+        const secureUrl = await uploadImageIfPresent({
+            file,
+            folder,
+            publicId: buildCloudinaryPublicId(publicIdPrefix, Date.now(), index),
+        });
+
+        if (secureUrl) {
+            uploaded.push(secureUrl);
+        }
+    }
+
+    return uploaded;
+};
+
+const mergeUniqueUrls = (...collections) => {
+    const seen = new Set();
+    const merged = [];
+
+    for (const collection of collections) {
+        for (const rawItem of collection || []) {
+            const item = String(rawItem || '').trim();
+            if (!item || seen.has(item)) continue;
+            seen.add(item);
+            merged.push(item);
+        }
+    }
+
+    return merged;
+};
+
+const resolveComplejoCover = ({
+    uploadedCover = '',
+    requestedImages = [],
+    uploadedGallery = [],
+    currentCover = '',
+}) => {
+    const requested = requestedImages.map((item) => String(item || '').trim()).filter(Boolean);
+    const uploaded = uploadedGallery.map((item) => String(item || '').trim()).filter(Boolean);
+    const current = String(currentCover || '').trim();
+    const cover = String(uploadedCover || '').trim();
+
+    if (cover) {
+        return cover;
+    }
+
+    if (current && requested.includes(current)) {
+        return current;
+    }
+
+    if (requested.length > 0) {
+        return requested[0];
+    }
+
+    if (uploaded.length > 0) {
+        return uploaded[0];
+    }
+
+    return '';
 };
 
 const guardarComplejo = async (req = request, res = response) => {
     try {
         const data = normalizarPayloadComplejo(req.body);
+        const files = req.files || {};
+        const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
+        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
         data.administrador = req.usuarioAuth._id;
         data.administradores = [req.usuarioAuth._id];
+        const portadaUrl = await uploadImageIfPresent({
+            file: portadaFile,
+            folder: 'canchas/complejos',
+            publicId: buildCloudinaryPublicId('complejo-portada', data.nombre || req.usuarioAuth._id, Date.now()),
+        });
+        const galeriaUrls = await uploadManyImages({
+            files: galeriaFiles,
+            folder: 'canchas/complejos',
+            publicIdPrefix: buildCloudinaryPublicId('complejo-galeria', data.nombre || req.usuarioAuth._id),
+        });
+        if (portadaUrl) {
+            data.img = portadaUrl;
+        }
+        data.imagenes = mergeUniqueUrls(
+            galeriaUrls,
+            portadaUrl ? [portadaUrl] : [],
+            data.imagenes || [],
+        );
         const complejo = new Complejos(data);
 
         await complejo.save();
@@ -84,20 +209,52 @@ const actualizarComplejo = async (req = request, res = response) => {
 
     try {
         const data = normalizarPayloadComplejo(req.body);
-        data.administrador = req.usuarioAuth._id;
-        data.administradores = [req.usuarioAuth._id];
-        const complejo = await Complejos.findByIdAndUpdate(id, data, { new: true })
-            .populate('administrador')
-            .populate('administradores')
-            .populate('deportes')
-            .populate('canchas');
+        const files = req.files || {};
+        const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
+        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
+        const complejoActual = await Complejos.findById(id);
 
-        if (!complejo) {
+        if (!complejoActual) {
             return res.status(404).json({
                 ok: false,
                 error: 'Complejo no encontrado'
             });
         }
+
+        data.administrador = req.usuarioAuth._id;
+        data.administradores = [req.usuarioAuth._id];
+        const portadaUrl = await uploadImageIfPresent({
+            file: portadaFile,
+            folder: 'canchas/complejos',
+            publicId: buildCloudinaryPublicId('complejo-portada', id, Date.now()),
+        });
+        const galeriaUrls = await uploadManyImages({
+            files: galeriaFiles,
+            folder: 'canchas/complejos',
+            publicIdPrefix: buildCloudinaryPublicId('complejo-galeria', id),
+        });
+        data.img = portadaUrl || data.img || complejoActual.img || '';
+        data.imagenes = mergeUniqueUrls(
+            data.imagenes || [],
+            galeriaUrls,
+            data.img ? [data.img] : [],
+        );
+        data.img = resolveComplejoCover({
+            uploadedCover: portadaUrl,
+            requestedImages: data.imagenes,
+            uploadedGallery: galeriaUrls,
+            currentCover: complejoActual.img,
+        });
+        data.imagenes = mergeUniqueUrls(
+            data.img ? [data.img] : [],
+            data.imagenes,
+        );
+
+        const complejo = await Complejos.findByIdAndUpdate(id, data, { new: true })
+            .populate('administrador')
+            .populate('administradores')
+            .populate('deportes')
+            .populate('canchas');
 
         await auditAdminGeneralAction({
             req,
