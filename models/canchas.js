@@ -52,6 +52,35 @@ const TarifaHorarioSchema = new Schema({
     },
 }, { _id: false });
 
+const TarifaEspecialSchema = new Schema({
+    diasSemana: {
+        type: [Number],
+        default: [],
+    },
+    horaInicio: {
+        type: String,
+        required: true,
+    },
+    horaFin: {
+        type: String,
+        required: true,
+    },
+    precio: {
+        type: Number,
+        min: 0,
+        required: true,
+    },
+    moneda: {
+        type: String,
+        default: 'COP',
+        trim: true,
+    },
+    activo: {
+        type: Boolean,
+        default: true,
+    },
+}, { _id: false });
+
 const CanchasSchema = new Schema({
     nombre: {
         type: String,
@@ -84,8 +113,16 @@ const CanchasSchema = new Schema({
         type: Number,
         default: 0,
     },
+    precioHoraBase: {
+        type: Number,
+        default: 0,
+    },
     tarifas: {
         type: [TarifaHorarioSchema],
+        default: [],
+    },
+    tarifasEspeciales: {
+        type: [TarifaEspecialSchema],
         default: [],
     },
     img: {

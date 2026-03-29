@@ -63,6 +63,71 @@ const validateTarifas = (tarifas = []) => {
     return null;
 };
 
+const validateTarifasEspeciales = (tarifasEspeciales = []) => {
+    if (!Array.isArray(tarifasEspeciales)) {
+        return 'Las tarifas especiales deben ser una lista';
+    }
+
+    const expanded = [];
+
+    for (const tarifa of tarifasEspeciales) {
+        const diasSemana = Array.isArray(tarifa?.diasSemana)
+            ? tarifa.diasSemana.map((item) => Number(item)).filter((item) => item >= 1 && item <= 7)
+            : [];
+        const horaInicio = tarifa?.horaInicio;
+        const horaFin = tarifa?.horaFin;
+        const precio = Number(tarifa?.precio);
+
+        if (diasSemana.length === 0) {
+            return 'Cada tarifa especial debe incluir al menos un dia valido entre 1 y 7';
+        }
+
+        if (!horaInicio || !horaFin) {
+            return 'Cada tarifa especial debe incluir horaInicio y horaFin';
+        }
+
+        if (Number.isNaN(precio) || precio < 0) {
+            return 'Cada tarifa especial debe incluir un precio valido';
+        }
+
+        for (const diaSemana of diasSemana) {
+            expanded.push({
+                diaSemana,
+                horaInicio,
+                horaFin,
+                precio,
+                moneda: tarifa?.moneda || 'COP',
+                activo: tarifa?.activo !== false,
+            });
+        }
+    }
+
+    return validateTarifas(expanded);
+};
+
+const expandTarifasEspeciales = (tarifasEspeciales = []) => {
+    const expanded = [];
+
+    for (const tarifa of tarifasEspeciales) {
+        const diasSemana = Array.isArray(tarifa?.diasSemana)
+            ? tarifa.diasSemana.map((item) => Number(item)).filter((item) => item >= 1 && item <= 7)
+            : [];
+
+        for (const diaSemana of diasSemana) {
+            expanded.push({
+                diaSemana,
+                horaInicio: tarifa?.horaInicio,
+                horaFin: tarifa?.horaFin,
+                precio: Number(tarifa?.precio || 0),
+                moneda: tarifa?.moneda || 'COP',
+                activo: tarifa?.activo !== false,
+            });
+        }
+    }
+
+    return expanded;
+};
+
 const resolveDeporte = async (payload = {}) => {
     const rawTipoDeporte = String(payload.tipoDeporte || '').trim();
     const deporteId = payload.deporte || payload.deporteId || null;
@@ -87,7 +152,14 @@ const resolveDeporte = async (payload = {}) => {
 const guardarCancha = async (req = request, res = response) => {
     try {
         const data = req.body;
-        const tarifasError = validateTarifas(data.tarifas ?? []);
+        const precioHoraBase = Number(data.precioHoraBase ?? data.precioHora ?? 0);
+        const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const tarifasExpandidas = tarifasEspeciales.length > 0
+            ? expandTarifasEspeciales(tarifasEspeciales)
+            : (Array.isArray(data.tarifas) ? data.tarifas : []);
+        const tarifasError = tarifasEspeciales.length > 0
+            ? validateTarifasEspeciales(tarifasEspeciales)
+            : validateTarifas(data.tarifas ?? []);
         const deporte = await resolveDeporte(data);
 
         if (tarifasError) {
@@ -102,6 +174,11 @@ const guardarCancha = async (req = request, res = response) => {
             data.tipoDeporte = deporte.nombre;
             data.deportes = [deporte._id];
         }
+
+        data.precioHoraBase = Number.isNaN(precioHoraBase) ? 0 : precioHoraBase;
+        data.precioHora = data.precioHoraBase;
+        data.tarifasEspeciales = tarifasEspeciales;
+        data.tarifas = tarifasExpandidas;
 
         const cancha = new Canchas(data);
 
@@ -197,7 +274,14 @@ const actualizarCancha = async (req = request, res = response) => {
     const data = req.body;
 
     try {
-        const tarifasError = validateTarifas(data.tarifas ?? []);
+        const precioHoraBase = Number(data.precioHoraBase ?? data.precioHora ?? 0);
+        const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const tarifasExpandidas = tarifasEspeciales.length > 0
+            ? expandTarifasEspeciales(tarifasEspeciales)
+            : (Array.isArray(data.tarifas) ? data.tarifas : []);
+        const tarifasError = tarifasEspeciales.length > 0
+            ? validateTarifasEspeciales(tarifasEspeciales)
+            : validateTarifas(data.tarifas ?? []);
         const deporte = await resolveDeporte(data);
 
         if (tarifasError) {
@@ -211,6 +295,15 @@ const actualizarCancha = async (req = request, res = response) => {
             data.deporte = deporte._id;
             data.tipoDeporte = deporte.nombre;
             data.deportes = [deporte._id];
+        }
+
+        if ('precioHora' in data || 'precioHoraBase' in data) {
+            data.precioHoraBase = Number.isNaN(precioHoraBase) ? 0 : precioHoraBase;
+            data.precioHora = data.precioHoraBase;
+        }
+        if (Array.isArray(data.tarifas) || tarifasEspeciales.length > 0) {
+            data.tarifasEspeciales = tarifasEspeciales;
+            data.tarifas = tarifasExpandidas;
         }
 
         const canchaActualizada = await Canchas.findByIdAndUpdate(
