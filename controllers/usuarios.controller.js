@@ -3,6 +3,7 @@ const Usuarios = require("../models/usuarios");
 const RoleChangeAudit = require("../models/role-change-audits");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const bcryptjs = require('bcryptjs');
+const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
 
 const normalizarPayloadUsuario = (data = {}) => {
     const payload = { ...data };
@@ -36,6 +37,27 @@ const normalizarPayloadUsuario = (data = {}) => {
 };
 
 const TIPOS_DOCUMENTO_VALIDOS = ['CC', 'CE', 'TI', 'PASAPORTE'];
+
+const buildCloudinaryPublicId = (...parts) =>
+    parts
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .join('-')
+        .replace(/[^a-zA-Z0-9-_]/g, '_');
+
+const uploadImageIfPresent = async ({ file, folder, publicId }) => {
+    if (!file?.buffer) {
+        return null;
+    }
+
+    const result = await uploadBufferToCloudinary({
+        buffer: file.buffer,
+        folder,
+        publicId,
+    });
+
+    return result?.secure_url || '';
+};
 
 const esReferenciaArchivoValida = (value = '') => {
     const normalized = String(value || '').trim();
@@ -302,6 +324,58 @@ const actualizarMiUsuario = async (req = require, res = response) => {
     }
 }
 
+const actualizarFotoPerfilUsuario = async (req = require, res = response) => {
+    try {
+        const userId = String(req.usuarioAuth?._id || '');
+        const fotoFile = req.file;
+
+        if (!userId) {
+            return res.status(401).json({
+                ok: false,
+                error: 'Sesion no valida'
+            });
+        }
+
+        if (!fotoFile?.buffer) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes adjuntar una foto de perfil'
+            });
+        }
+
+        const usuario = await Usuarios.findById(userId);
+
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            });
+        }
+
+        const uploadedUrl = await uploadImageIfPresent({
+            file: fotoFile,
+            folder: 'canchas/usuarios/perfil',
+            publicId: buildCloudinaryPublicId('perfil', userId, Date.now()),
+        });
+
+        usuario.fotoUrl = uploadedUrl;
+        usuario.nombre_archivo_imagen = uploadedUrl;
+        await usuario.save();
+
+        return res.status(200).json({
+            ok: true,
+            usuario,
+            fotoUrl: uploadedUrl,
+            msg: 'Foto de perfil actualizada'
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+}
+
 const actualizarRolUsuario = async (req = require, res = response) => {
     try {
         const { id } = req.params;
@@ -519,12 +593,31 @@ const actualizarDocumentosIdentidadUsuario = async (req = require, res = respons
         }
 
         const payload = normalizarPayloadUsuario(req.body);
+        const files = req.files || {};
+        const frontalFile = Array.isArray(files.documentoFrontal) ? files.documentoFrontal[0] : null;
+        const posteriorFile = Array.isArray(files.documentoPosterior) ? files.documentoPosterior[0] : null;
+        const selfieFile = Array.isArray(files.selfie) ? files.selfie[0] : null;
         const tipoDocumento = String(payload.identidadTipoDocumento || '').toUpperCase();
         const numeroDocumento = String(payload.identidadNumeroDocumento || '').trim();
         const nombreCompleto = String(payload.identidadNombreCompleto || '').trim();
-        const frontal = payload.identidadDocumentoFrontalUrl || usuario.identidadDocumentoFrontalUrl;
-        const posterior = payload.identidadDocumentoPosteriorUrl || usuario.identidadDocumentoPosteriorUrl;
-        const selfie = payload.identidadSelfieUrl || usuario.identidadSelfieUrl;
+        const frontalSubido = await uploadImageIfPresent({
+            file: frontalFile,
+            folder: 'canchas/usuarios/identidad',
+            publicId: buildCloudinaryPublicId('identidad-frontal', usuario._id, Date.now()),
+        });
+        const posteriorSubido = await uploadImageIfPresent({
+            file: posteriorFile,
+            folder: 'canchas/usuarios/identidad',
+            publicId: buildCloudinaryPublicId('identidad-posterior', usuario._id, Date.now()),
+        });
+        const selfieSubida = await uploadImageIfPresent({
+            file: selfieFile,
+            folder: 'canchas/usuarios/identidad',
+            publicId: buildCloudinaryPublicId('identidad-selfie', usuario._id, Date.now()),
+        });
+        const frontal = frontalSubido || payload.identidadDocumentoFrontalUrl || usuario.identidadDocumentoFrontalUrl;
+        const posterior = posteriorSubido || payload.identidadDocumentoPosteriorUrl || usuario.identidadDocumentoPosteriorUrl;
+        const selfie = selfieSubida || payload.identidadSelfieUrl || usuario.identidadSelfieUrl;
 
         if (!TIPOS_DOCUMENTO_VALIDOS.includes(tipoDocumento)) {
             return res.status(400).json({
@@ -585,9 +678,9 @@ const actualizarDocumentosIdentidadUsuario = async (req = require, res = respons
         usuario.identidadTipoDocumento = tipoDocumento;
         usuario.identidadNumeroDocumento = numeroDocumento;
         usuario.identidadNombreCompleto = nombreCompleto;
-        usuario.identidadDocumentoFrontalUrl = payload.identidadDocumentoFrontalUrl ?? usuario.identidadDocumentoFrontalUrl;
-        usuario.identidadDocumentoPosteriorUrl = payload.identidadDocumentoPosteriorUrl ?? usuario.identidadDocumentoPosteriorUrl;
-        usuario.identidadSelfieUrl = payload.identidadSelfieUrl ?? usuario.identidadSelfieUrl;
+        usuario.identidadDocumentoFrontalUrl = frontal;
+        usuario.identidadDocumentoPosteriorUrl = posterior;
+        usuario.identidadSelfieUrl = selfie;
         usuario.identidadEstado = 'pendiente';
         usuario.identidadVerificada = false;
         usuario.identidadObservaciones = '';
@@ -748,6 +841,7 @@ module.exports = {
     obtenerUsuario,
     actualizarUsuario,
     actualizarMiUsuario,
+    actualizarFotoPerfilUsuario,
     eliminarUsuario,
     actualizarRolUsuario,
     actualizarRolGeneralUsuario,

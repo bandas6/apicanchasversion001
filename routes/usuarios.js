@@ -7,6 +7,7 @@ const {
     obtenerUsuario,
     actualizarUsuario,
     actualizarMiUsuario,
+    actualizarFotoPerfilUsuario,
     eliminarUsuario,
     actualizarRolUsuario,
     actualizarRolGeneralUsuario,
@@ -24,6 +25,7 @@ const {
 } = require("../helpers/db-validators");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { validarJWT } = require("../middlewares/validar-jwt");
+const { uploadMemory } = require("../middlewares/upload-memory");
 const {
     esAdminRol,
     esAdminGeneralRol,
@@ -60,6 +62,13 @@ router.put('/me', [
     validarCampos
 ], actualizarMiUsuario);
 
+router.patch('/me/foto', [
+    validarJWT,
+    usuarioEsJugador,
+    uploadMemory.single('foto'),
+    validarCampos
+], actualizarFotoPerfilUsuario);
+
 router.put('/:id', [
     validarJWT,
     esMismoUsuarioOAdmin,
@@ -90,6 +99,11 @@ router.patch('/:id/rol-general', [
 router.patch('/:id/identidad-documentos', [
     validarJWT,
     esMismoUsuarioOAdmin,
+    uploadMemory.fields([
+        { name: 'documentoFrontal', maxCount: 1 },
+        { name: 'documentoPosterior', maxCount: 1 },
+        { name: 'selfie', maxCount: 1 },
+    ]),
     check('id', 'No es un id valido').isMongoId(),
     check('id').custom(usuarioNoExiste),
     validarCampos
