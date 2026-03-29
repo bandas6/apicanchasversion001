@@ -1,12 +1,21 @@
 const { request, response } = require("express");
+const Mensaje = require("../models/mensajes");
+const { ADMIN_ROLES } = require("../middlewares/validar-roles");
 
 
 const enviarMensaje = async (req = request, res = response) => {
-
     const { remitente, destinatario, contenido } = req.body;
 
     try {
-        const nuevoMensaje = new Mensaje({ remitente, destinatario, contenido });
+        const remitenteSeguro =
+            ADMIN_ROLES.includes(req.usuarioAuth?.rol) && remitente
+                ? remitente
+                : req.usuarioAuth?._id;
+        const nuevoMensaje = new Mensaje({
+            remitente: remitenteSeguro,
+            destinatario,
+            contenido
+        });
         await nuevoMensaje.save();
 
         res.status(201).json({

@@ -1,6 +1,8 @@
 const { request, response } = require("express");
 const Canchas = require("../models/canchas");
 const Complejos = require("../models/complejos");
+const Deporte = require("../models/deportes");
+const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 require("../models/deportes");
 
 const parseHourToMinutes = (value = '') => {
@@ -61,10 +63,32 @@ const validateTarifas = (tarifas = []) => {
     return null;
 };
 
+const resolveDeporte = async (payload = {}) => {
+    const rawTipoDeporte = String(payload.tipoDeporte || '').trim();
+    const deporteId = payload.deporte || payload.deporteId || null;
+
+    if (deporteId) {
+        const deporte = await Deporte.findById(deporteId).select('_id nombre');
+        if (deporte) {
+            return deporte;
+        }
+    }
+
+    if (!rawTipoDeporte) {
+        return null;
+    }
+
+    return Deporte.findOne({
+        nombre: new RegExp(`^${rawTipoDeporte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+        activo: true,
+    }).select('_id nombre');
+};
+
 const guardarCancha = async (req = request, res = response) => {
     try {
         const data = req.body;
         const tarifasError = validateTarifas(data.tarifas ?? []);
+        const deporte = await resolveDeporte(data);
 
         if (tarifasError) {
             return res.status(400).json({
@@ -73,15 +97,37 @@ const guardarCancha = async (req = request, res = response) => {
             });
         }
 
+        if (deporte) {
+            data.deporte = deporte._id;
+            data.tipoDeporte = deporte.nombre;
+            data.deportes = [deporte._id];
+        }
+
         const cancha = new Canchas(data);
 
         await cancha.save();
 
         await Complejos.findByIdAndUpdate(
             data.complejo,
-            { $addToSet: { canchas: cancha._id } },
+            {
+                $addToSet: {
+                    canchas: cancha._id,
+                    ...(deporte ? { deportes: deporte._id } : {}),
+                },
+            },
             { new: true }
         );
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'CREATE_CANCHA',
+            resourceType: 'cancha',
+            resourceId: cancha._id,
+            summary: `Cancha creada: ${cancha.nombre || ''}`.trim(),
+            metadata: {
+                complejo: data.complejo,
+            },
+        });
 
         return res.status(201).json({
             ok: true,
@@ -152,12 +198,19 @@ const actualizarCancha = async (req = request, res = response) => {
 
     try {
         const tarifasError = validateTarifas(data.tarifas ?? []);
+        const deporte = await resolveDeporte(data);
 
         if (tarifasError) {
             return res.status(400).json({
                 ok: false,
                 error: tarifasError
             });
+        }
+
+        if (deporte) {
+            data.deporte = deporte._id;
+            data.tipoDeporte = deporte.nombre;
+            data.deportes = [deporte._id];
         }
 
         const canchaActualizada = await Canchas.findByIdAndUpdate(
@@ -175,6 +228,25 @@ const actualizarCancha = async (req = request, res = response) => {
                 msg: 'Cancha no encontrada'
             });
         }
+
+        if (deporte && canchaActualizada.complejo) {
+            await Complejos.findByIdAndUpdate(
+                canchaActualizada.complejo,
+                { $addToSet: { deportes: deporte._id } },
+                { new: true }
+            );
+        }
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'UPDATE_CANCHA',
+            resourceType: 'cancha',
+            resourceId: canchaActualizada._id,
+            summary: `Cancha actualizada: ${canchaActualizada.nombre || ''}`.trim(),
+            metadata: {
+                camposActualizados: Object.keys(data),
+            },
+        });
 
         return res.status(200).json({
             ok: true,
@@ -265,6 +337,14 @@ const eliminarCancha = async (req = request, res = response) => {
                 msg: 'Cancha no encontrada'
             });
         }
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'DELETE_CANCHA',
+            resourceType: 'cancha',
+            resourceId: canchaEliminada._id,
+            summary: `Cancha desactivada: ${canchaEliminada.nombre || ''}`.trim(),
+        });
 
         return res.status(200).json({
             ok: true,

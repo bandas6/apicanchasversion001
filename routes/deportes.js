@@ -1,11 +1,12 @@
 const { Router } = require('express');
-const { check } = require('express-validator');
-const { obtenerDatosDeportivos } = require('../controllers/deportes.controller');
+const { crearDeporte, actualizarDeporte, obtenerDeportes } = require('../controllers/deportes.controller');
+const { validarJWT } = require('../middlewares/validar-jwt');
+const { esAdminRol } = require('../middlewares/validar-roles');
 
 const router = Router();
 
-router.get('/', obtenerDatosDeportivos )
-
-
+router.get('/', obtenerDeportes);
+router.post('/', [validarJWT, esAdminRol], crearDeporte);
+router.put('/:id', [validarJWT, esAdminRol], actualizarDeporte);
 
 module.exports = router;

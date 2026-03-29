@@ -1,5 +1,6 @@
 const { request, response } = require("express");
 const Equipos = require("../models/equipos");
+const { ADMIN_ROLES } = require("../middlewares/validar-roles");
 
 const obtenerEquipos = async (req = request, res = response) => {
     try {
@@ -101,7 +102,17 @@ const obtenerJugadoresPorEquipo = async (req = request, res = response) => {
 const guardarEquipo = async (req = request, res = response) => {
     try {
         const { nombre, valoracion, usuario, img, jugadoresId } = req.body;
-        const equipo = new Equipos({ nombre, valoracion, usuario, img, jugadoresId });
+        const ownerId =
+            ADMIN_ROLES.includes(req.usuarioAuth?.rol) && usuario
+                ? usuario
+                : req.usuarioAuth?._id;
+        const equipo = new Equipos({
+            nombre,
+            valoracion,
+            usuario: ownerId,
+            img,
+            jugadoresId
+        });
 
         await equipo.save();
 

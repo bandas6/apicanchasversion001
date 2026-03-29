@@ -1,24 +1,28 @@
 const { response } = require("express");
 const Usuarios = require("../models/usuarios");
+const RoleChangeAudit = require("../models/role-change-audits");
+const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const bcryptjs = require('bcryptjs');
 
 const normalizarPayloadUsuario = (data = {}) => {
     const payload = { ...data };
 
-    ['nombre', 'apellido', 'correo', 'posicion', 'bio', 'ciudad', 'nivelJuego', 'fotoUrl', 'nombre_archivo_imagen']
+    ['nombre', 'apellido', 'correo', 'posicion', 'bio', 'ciudad', 'nivelJuego', 'pieDominante', 'estiloJuego', 'disponibilidadHabitual', 'zonaPreferida', 'horariosPreferidos', 'tipoCanchaPreferida', 'fotoUrl', 'nombre_archivo_imagen', 'identidadTipoDocumento', 'identidadNumeroDocumento', 'identidadNombreCompleto', 'identidadDocumentoFrontalUrl', 'identidadDocumentoPosteriorUrl', 'identidadSelfieUrl', 'identidadObservaciones']
         .forEach((key) => {
             if (typeof payload[key] === 'string') {
                 payload[key] = payload[key].trim();
             }
         });
 
-    if (payload.deportesFavoritos === '' || payload.deportesFavoritos == null) {
-        payload.deportesFavoritos = [];
-    } else if (Array.isArray(payload.deportesFavoritos)) {
-        payload.deportesFavoritos = payload.deportesFavoritos
-            .map((item) => String(item).trim())
-            .filter(Boolean);
-    }
+    ['deportesFavoritos', 'deportesPrincipales'].forEach((key) => {
+        if (payload[key] === '' || payload[key] == null) {
+            payload[key] = [];
+        } else if (Array.isArray(payload[key])) {
+            payload[key] = payload[key]
+                .map((item) => String(item).trim())
+                .filter(Boolean);
+        }
+    });
 
     if (payload.puntuacion !== undefined) {
         payload.puntuacion = Number(payload.puntuacion || 0);
@@ -31,13 +35,39 @@ const normalizarPayloadUsuario = (data = {}) => {
     return payload;
 };
 
+const TIPOS_DOCUMENTO_VALIDOS = ['CC', 'CE', 'TI', 'PASAPORTE'];
+
+const esReferenciaArchivoValida = (value = '') => {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+        return false;
+    }
+
+    return normalized.startsWith('http://')
+        || normalized.startsWith('https://')
+        || normalized.startsWith('archivo_local:');
+};
+
 const obtenerUsuarios = async (req = require, res = response) => {
     try {
-        const { limit = 0, desde = 0, rol } = req.query;
+        const { limit = 0, desde = 0, rol, identidadVerificada, identidadEstado, destacados } = req.query;
         const query = { estado: true };
 
         if (rol) {
             query.rol = rol;
+        }
+
+        if (destacados === 'true') {
+            query.rol = 'USER_ROL';
+            query.identidadEstado = 'aprobada';
+        }
+
+        if (identidadVerificada !== undefined) {
+            query.identidadVerificada = identidadVerificada === 'true';
+        }
+
+        if (identidadEstado) {
+            query.identidadEstado = identidadEstado;
         }
 
         const [total, usuarios] = await Promise.all([
@@ -63,6 +93,33 @@ const obtenerUsuarios = async (req = require, res = response) => {
         });
     }
 };
+
+const obtenerMiUsuario = async (req = require, res = response) => {
+    try {
+        const usuarioId = req.usuarioAuth?._id;
+        const usuario = await Usuarios.findById(usuarioId)
+            .populate('equipo_id')
+            .select('-password')
+            .select('__v');
+
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            });
+        }
+
+        return res.status(200).json({
+            ok: true,
+            usuario,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+}
 
 // Obtener usuario por id
 const obtenerUsuario = async (req = require, res = response) => {
@@ -95,6 +152,7 @@ const guardarUsuario = async (req = require, res = response) => {
     try {
 
         const data = normalizarPayloadUsuario(req.body);
+        data.rol = 'USER_ROL';
         const usuario = new Usuarios(data);
 
         // Ecriptar contraseña
@@ -126,8 +184,36 @@ const actualizarUsuario = async (req = require, res = response) => {
     try {
 
         const { id } = req.params;
-        const { _id, password, google, correo, ...restoRaw } = req.body;
+        const {
+            _id,
+            password,
+            google,
+            correo,
+            rol,
+            identidadVerificada,
+            identidadEstado,
+            identidadVerificadaPor,
+            identidadVerificadaAt,
+            identidadSolicitadaAt,
+            ...restoRaw
+        } = req.body;
         const resto = normalizarPayloadUsuario(restoRaw);
+
+        if (req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL') {
+            if (rol !== undefined) {
+                resto.rol = rol;
+            }
+        } else {
+            delete resto.estado;
+            delete resto.complejo;
+            delete resto.identidadObservaciones;
+        }
+
+        delete resto.identidadVerificada;
+        delete resto.identidadEstado;
+        delete resto.identidadVerificadaPor;
+        delete resto.identidadVerificadaAt;
+        delete resto.identidadSolicitadaAt;
 
         if (password) {
             const salt = await bcryptjs.genSaltSync();
@@ -135,6 +221,19 @@ const actualizarUsuario = async (req = require, res = response) => {
         }
 
         const usuario = await Usuarios.findByIdAndUpdate(id, resto, { new: true });
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'UPDATE_USER',
+            resourceType: 'usuario',
+            resourceId: usuario?._id,
+            targetUsuario: usuario?._id,
+            targetCorreo: usuario?.correo || '',
+            summary: 'Actualizacion global de usuario',
+            metadata: {
+                camposActualizados: Object.keys(resto),
+            },
+        });
 
         res.status(200).json({
             ok: true,
@@ -161,6 +260,16 @@ const eliminarUsuario = async (req = require, res = response) => {
 
         const usuario = await Usuarios.findByIdAndUpdate(id, { estado: false });
 
+        await auditAdminGeneralAction({
+            req,
+            action: 'DISABLE_USER',
+            resourceType: 'usuario',
+            resourceId: usuario?._id,
+            targetUsuario: usuario?._id,
+            targetCorreo: usuario?.correo || '',
+            summary: 'Usuario desactivado por superadmin',
+        });
+
         res.status(200).json({
             ok: true,
             usuario
@@ -178,10 +287,471 @@ const eliminarUsuario = async (req = require, res = response) => {
 
 }
 
+const actualizarMiUsuario = async (req = require, res = response) => {
+    try {
+        req.params = {
+            ...req.params,
+            id: String(req.usuarioAuth?._id || ''),
+        };
+        return await actualizarUsuario(req, res);
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+}
+
+const actualizarRolUsuario = async (req = require, res = response) => {
+    try {
+        const { id } = req.params;
+        const { rol } = req.body;
+        const actorId = String(req.usuarioAuth?._id || '');
+
+        const usuarioObjetivo = await Usuarios.findById(id);
+
+        if (!usuarioObjetivo) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            });
+        }
+
+        if (!usuarioObjetivo.estado) {
+            return res.status(400).json({
+                ok: false,
+                error: 'No se puede cambiar el rol de un usuario inactivo'
+            });
+        }
+
+        if (String(usuarioObjetivo._id) === actorId && usuarioObjetivo.rol !== rol) {
+            return res.status(400).json({
+                ok: false,
+                error: 'No puedes cambiar tu propio rol desde este endpoint'
+            });
+        }
+
+        if (
+            ['ADMIN_ROL', 'ADMIN_GENERAL_ROL'].includes(usuarioObjetivo.rol) &&
+            usuarioObjetivo.rol !== rol
+        ) {
+            const totalAdminsActivos = await Usuarios.countDocuments({
+                rol: usuarioObjetivo.rol,
+                estado: true,
+            });
+
+            if (totalAdminsActivos <= 1) {
+                return res.status(400).json({
+                    ok: false,
+                    error: `No puedes remover el ultimo ${usuarioObjetivo.rol} activo del sistema`
+                });
+            }
+        }
+
+        const rolAnterior = usuarioObjetivo.rol;
+
+        usuarioObjetivo.rol = rol;
+        usuarioObjetivo.refreshTokenHash = '';
+        await usuarioObjetivo.save();
+
+        await RoleChangeAudit.create({
+            actorUsuario: req.usuarioAuth._id,
+            actorCorreo: req.usuarioAuth?.correo || '',
+            usuarioObjetivo: usuarioObjetivo._id,
+            correoObjetivo: usuarioObjetivo.correo || '',
+            rolAnterior,
+            rolNuevo: rol,
+        });
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'UPDATE_ROLE',
+            resourceType: 'usuario',
+            resourceId: usuarioObjetivo._id,
+            targetUsuario: usuarioObjetivo._id,
+            targetCorreo: usuarioObjetivo.correo || '',
+            summary: `Cambio de rol a ${rol}`,
+            metadata: {
+                rolAnterior,
+                rolNuevo: rol,
+            },
+        });
+
+        return res.status(200).json({
+            ok: true,
+            usuario: usuarioObjetivo,
+            msg: `Rol actualizado a ${rol}`
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message
+        });
+    }
+}
+
+const actualizarRolGeneralUsuario = async (req = require, res = response) => {
+    try {
+        const { id } = req.params;
+        const { rol } = req.body;
+        const actorId = String(req.usuarioAuth?._id || '');
+
+        const usuarioObjetivo = await Usuarios.findById(id);
+
+        if (!usuarioObjetivo) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            });
+        }
+
+        if (!usuarioObjetivo.estado) {
+            return res.status(400).json({
+                ok: false,
+                error: 'No se puede cambiar el rol de un usuario inactivo'
+            });
+        }
+
+        if (String(usuarioObjetivo._id) === actorId && usuarioObjetivo.rol !== rol) {
+            return res.status(400).json({
+                ok: false,
+                error: 'No puedes cambiar tu propio rol general desde este endpoint'
+            });
+        }
+
+        const rolAnterior = usuarioObjetivo.rol;
+        const promotingToGeneralAdmin = rol === 'ADMIN_GENERAL_ROL';
+        const removingGeneralAdmin = rolAnterior === 'ADMIN_GENERAL_ROL' && rol !== 'ADMIN_GENERAL_ROL';
+
+        if (!promotingToGeneralAdmin && !removingGeneralAdmin) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Este endpoint solo gestiona asignacion o revocacion de ADMIN_GENERAL_ROL'
+            });
+        }
+
+        if (promotingToGeneralAdmin) {
+            if (rolAnterior !== 'ADMIN_ROL') {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'Solo un ADMIN_ROL puede promocionarse a ADMIN_GENERAL_ROL'
+                });
+            }
+        }
+
+        if (removingGeneralAdmin) {
+            const totalGeneralAdminsActivos = await Usuarios.countDocuments({
+                rol: 'ADMIN_GENERAL_ROL',
+                estado: true,
+            });
+
+            if (totalGeneralAdminsActivos <= 1) {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'No puedes remover el ultimo ADMIN_GENERAL_ROL activo del sistema'
+                });
+            }
+        }
+
+        usuarioObjetivo.rol = rol;
+        usuarioObjetivo.refreshTokenHash = '';
+        await usuarioObjetivo.save();
+
+        await RoleChangeAudit.create({
+            actorUsuario: req.usuarioAuth._id,
+            actorCorreo: req.usuarioAuth?.correo || '',
+            usuarioObjetivo: usuarioObjetivo._id,
+            correoObjetivo: usuarioObjetivo.correo || '',
+            rolAnterior,
+            rolNuevo: rol,
+        });
+
+        await auditAdminGeneralAction({
+            req,
+            action: promotingToGeneralAdmin ? 'GRANT_GENERAL_ADMIN' : 'REVOKE_GENERAL_ADMIN',
+            resourceType: 'usuario',
+            resourceId: usuarioObjetivo._id,
+            targetUsuario: usuarioObjetivo._id,
+            targetCorreo: usuarioObjetivo.correo || '',
+            summary: promotingToGeneralAdmin
+                ? 'Asignacion de ADMIN_GENERAL_ROL'
+                : 'Revocacion de ADMIN_GENERAL_ROL',
+            metadata: {
+                rolAnterior,
+                rolNuevo: rol,
+            },
+        });
+
+        return res.status(200).json({
+            ok: true,
+            usuario: usuarioObjetivo,
+            msg: `Rol general actualizado a ${rol}`
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message
+        });
+    }
+}
+
+const actualizarDocumentosIdentidadUsuario = async (req = require, res = response) => {
+    try {
+        const { id } = req.params;
+        const actorId = String(req.usuarioAuth?._id || '');
+        const isGeneralAdmin = req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+        const isSelf = actorId === String(id);
+
+        if (!isGeneralAdmin && !isSelf) {
+            return res.status(403).json({
+                ok: false,
+                error: 'Solo puedes enviar documentos para tu propia cuenta'
+            });
+        }
+
+        const usuario = await Usuarios.findById(id);
+
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            });
+        }
+
+        const payload = normalizarPayloadUsuario(req.body);
+        const tipoDocumento = String(payload.identidadTipoDocumento || '').toUpperCase();
+        const numeroDocumento = String(payload.identidadNumeroDocumento || '').trim();
+        const nombreCompleto = String(payload.identidadNombreCompleto || '').trim();
+        const frontal = payload.identidadDocumentoFrontalUrl || usuario.identidadDocumentoFrontalUrl;
+        const posterior = payload.identidadDocumentoPosteriorUrl || usuario.identidadDocumentoPosteriorUrl;
+        const selfie = payload.identidadSelfieUrl || usuario.identidadSelfieUrl;
+
+        if (!TIPOS_DOCUMENTO_VALIDOS.includes(tipoDocumento)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes seleccionar un tipo de documento valido'
+            });
+        }
+
+        if (!numeroDocumento || numeroDocumento.length < 5) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes ingresar un numero de documento valido'
+            });
+        }
+
+        if (!nombreCompleto || nombreCompleto.length < 6) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes ingresar el nombre completo del documento'
+            });
+        }
+
+        if (!frontal) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes adjuntar al menos la foto frontal del documento'
+            });
+        }
+
+        if (!selfie) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes adjuntar una selfie de verificacion'
+            });
+        }
+
+        if (!esReferenciaArchivoValida(frontal)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La referencia del documento frontal no es valida'
+            });
+        }
+
+        if (posterior && !esReferenciaArchivoValida(posterior)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La referencia del documento posterior no es valida'
+            });
+        }
+
+        if (!esReferenciaArchivoValida(selfie)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La referencia de la selfie no es valida'
+            });
+        }
+
+        usuario.identidadTipoDocumento = tipoDocumento;
+        usuario.identidadNumeroDocumento = numeroDocumento;
+        usuario.identidadNombreCompleto = nombreCompleto;
+        usuario.identidadDocumentoFrontalUrl = payload.identidadDocumentoFrontalUrl ?? usuario.identidadDocumentoFrontalUrl;
+        usuario.identidadDocumentoPosteriorUrl = payload.identidadDocumentoPosteriorUrl ?? usuario.identidadDocumentoPosteriorUrl;
+        usuario.identidadSelfieUrl = payload.identidadSelfieUrl ?? usuario.identidadSelfieUrl;
+        usuario.identidadEstado = 'pendiente';
+        usuario.identidadVerificada = false;
+        usuario.identidadObservaciones = '';
+        usuario.identidadSolicitadaAt = new Date();
+        usuario.identidadIntentos = Number(usuario.identidadIntentos || 0) + 1;
+        usuario.identidadVerificadaAt = null;
+        usuario.identidadVerificadaPor = null;
+
+        await usuario.save();
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'SUBMIT_IDENTITY_DOCUMENTS',
+            resourceType: 'usuario',
+            resourceId: usuario._id,
+            targetUsuario: usuario._id,
+            targetCorreo: usuario.correo || '',
+            summary: selfie
+                ? 'Documentos de identidad y selfie cargados'
+                : 'Documento de identidad cargado para revision',
+        });
+
+        return res.status(200).json({
+            ok: true,
+            usuario,
+            msg: 'Documentos enviados para validacion'
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message
+        });
+    }
+}
+
+const actualizarVerificacionIdentidadUsuario = async (req = require, res = response) => {
+    try {
+        const { id } = req.params;
+        const { estado, observaciones = '' } = normalizarPayloadUsuario(req.body);
+        const reviewNotes = String(observaciones || '').trim();
+        const usuario = await Usuarios.findById(id);
+
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            });
+        }
+
+        if (usuario.rol !== 'USER_ROL') {
+            return res.status(400).json({
+                ok: false,
+                error: 'Solo los usuarios con USER_ROL pueden pasar por este flujo'
+            });
+        }
+
+        if (!usuario.identidadDocumentoFrontalUrl) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El usuario no tiene documento frontal cargado'
+            });
+        }
+
+        if (!usuario.identidadSelfieUrl) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El usuario no tiene selfie de verificacion cargada'
+            });
+        }
+
+        if (estado === 'rechazada' && !reviewNotes) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes enviar observaciones al rechazar la identidad'
+            });
+        }
+
+        usuario.identidadEstado = estado;
+        usuario.identidadVerificada = estado === 'aprobada';
+        usuario.identidadObservaciones = reviewNotes;
+        usuario.identidadVerificadaAt = new Date();
+        usuario.identidadVerificadaPor = req.usuarioAuth._id;
+
+        await usuario.save();
+
+        await auditAdminGeneralAction({
+            req,
+            action: estado === 'aprobada'
+                ? 'APPROVE_IDENTITY'
+                : 'REJECT_IDENTITY',
+            resourceType: 'usuario',
+            resourceId: usuario._id,
+            targetUsuario: usuario._id,
+            targetCorreo: usuario.correo || '',
+            summary: estado === 'aprobada'
+                ? 'Identidad validada por ADMIN_GENERAL_ROL'
+                : 'Identidad rechazada por ADMIN_GENERAL_ROL',
+            metadata: {
+                observaciones: reviewNotes,
+            },
+        });
+
+        return res.status(200).json({
+            ok: true,
+            usuario,
+            msg: estado === 'aprobada'
+                ? 'Identidad validada correctamente'
+                : 'Identidad rechazada correctamente'
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message
+        });
+    }
+}
+
+const obtenerAuditoriaRoles = async (req = require, res = response) => {
+    try {
+        const { limit = 20, desde = 0, actor, objetivo } = req.query;
+        const query = {};
+
+        if (actor) {
+            query.actorUsuario = actor;
+        }
+
+        if (objetivo) {
+            query.usuarioObjetivo = objetivo;
+        }
+
+        const [total, auditorias] = await Promise.all([
+            RoleChangeAudit.countDocuments(query),
+            RoleChangeAudit.find(query)
+                .populate('actorUsuario', 'nombre apellido correo rol')
+                .populate('usuarioObjetivo', 'nombre apellido correo rol estado')
+                .sort({ fechaCambio: -1 })
+                .skip(Number(desde))
+                .limit(Number(limit)),
+        ]);
+
+        return res.status(200).json({
+            ok: true,
+            total,
+            auditorias,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+}
+
 module.exports = {
     guardarUsuario,
     obtenerUsuarios,
+    obtenerMiUsuario,
     obtenerUsuario,
     actualizarUsuario,
-    eliminarUsuario
+    actualizarMiUsuario,
+    eliminarUsuario,
+    actualizarRolUsuario,
+    actualizarRolGeneralUsuario,
+    actualizarDocumentosIdentidadUsuario,
+    actualizarVerificacionIdentidadUsuario,
+    obtenerAuditoriaRoles
 }

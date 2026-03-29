@@ -19,7 +19,7 @@ router.get('/:id',
     obtenerPartido);
 
 router.post('/', [
-    // validarJWT,
+    validarJWT,
     check('usuarios').custom(partidoExiste),
     validarCampos
 ], guardarPartido);

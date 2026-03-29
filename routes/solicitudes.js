@@ -4,6 +4,7 @@ const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
 const { obtenerSolicitud, obtenerSolicitudes, guardarSolicitud, actualizarSolicitud, actualizarSolicitudConReservaId, obtenerSolicitudesComplejo } = require("../controllers/solicitudes.controller");
 const { solicitudYaExiste } = require("../middlewares/validar-generales");
+const { esAdminRol, puedeGestionarSolicitudesComplejo } = require("../middlewares/validar-roles");
 
 
 const router = Router()
@@ -15,7 +16,9 @@ router.get('/', [
     ],obtenerSolicitudes);
 
 router.get('/solicitudesComplejo/:idComplejo', [
-    validarJWT
+    validarJWT,
+    esAdminRol,
+    puedeGestionarSolicitudesComplejo
     ],obtenerSolicitudesComplejo);
 
 router.get('/:id', [
@@ -40,6 +43,7 @@ router.put('/:id', [
 
 router.put('/actualizarConReserva/:reservaId', [
     validarJWT,
+    esAdminRol,
     check('reservaId', 'No es un id valido').isMongoId(),
     // check('usuarios').custom(partidoExiste),
     validarCampos

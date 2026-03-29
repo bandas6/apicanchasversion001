@@ -1,6 +1,7 @@
 const { request, response } = require("express");
 const Complejos = require("../models/complejos");
 const Canchas = require("../models/canchas");
+const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 require("../models/deportes");
 
 const normalizarPayloadComplejo = (data = {}) => {
@@ -52,9 +53,19 @@ const normalizarPayloadComplejo = (data = {}) => {
 const guardarComplejo = async (req = request, res = response) => {
     try {
         const data = normalizarPayloadComplejo(req.body);
+        data.administrador = req.usuarioAuth._id;
+        data.administradores = [req.usuarioAuth._id];
         const complejo = new Complejos(data);
 
         await complejo.save();
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'CREATE_COMPLEJO',
+            resourceType: 'complejo',
+            resourceId: complejo._id,
+            summary: `Complejo creado: ${complejo.nombre || ''}`.trim(),
+        });
 
         return res.status(201).json({
             ok: true,
@@ -73,6 +84,8 @@ const actualizarComplejo = async (req = request, res = response) => {
 
     try {
         const data = normalizarPayloadComplejo(req.body);
+        data.administrador = req.usuarioAuth._id;
+        data.administradores = [req.usuarioAuth._id];
         const complejo = await Complejos.findByIdAndUpdate(id, data, { new: true })
             .populate('administrador')
             .populate('administradores')
@@ -85,6 +98,17 @@ const actualizarComplejo = async (req = request, res = response) => {
                 error: 'Complejo no encontrado'
             });
         }
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'UPDATE_COMPLEJO',
+            resourceType: 'complejo',
+            resourceId: complejo._id,
+            summary: `Complejo actualizado: ${complejo.nombre || ''}`.trim(),
+            metadata: {
+                camposActualizados: Object.keys(data),
+            },
+        });
 
         return res.status(200).json({
             ok: true,

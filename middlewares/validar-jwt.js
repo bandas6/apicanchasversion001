@@ -50,6 +50,41 @@ const validarJWT = async (req = request, res = response, next) => {
     }
 }
 
+const validarJWTOptional = async (req = request, res = response, next) => {
+    const authHeader = req.header('Authorization');
+
+    if (!authHeader) {
+        return next();
+    }
+
+    if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Formato de token incorrecto' });
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    try {
+        const { uid } = jwt.verify(token, process.env.SECRETORPRIVATEKEY);
+        const usuario = await Usuario.findById(uid);
+
+        if (!usuario || !usuario.estado) {
+            return res.status(401).json({
+                msg: 'Token no valido',
+                ok: false
+            });
+        }
+
+        req.usuarioAuth = usuario;
+        next();
+    } catch (error) {
+        return res.status(401).json({
+            msg: 'Token invalido',
+            ok: false
+        });
+    }
+}
+
 module.exports = {
-    validarJWT
+    validarJWT,
+    validarJWTOptional
 };

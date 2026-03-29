@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { dbConnection } = require('../database/config');
+const { ensureSystemRoles } = require('../helpers/ensure-system-roles');
 
 
 class Server {
@@ -12,6 +13,7 @@ class Server {
 
         this.paths = {
             auth: '/api/auth',
+            adminGeneral: '/api/admin-general',
             usuarios: '/api/usuarios',
             deportes: '/api/deportes',
             equipos: '/api/equipos',
@@ -21,6 +23,7 @@ class Server {
             canchas: '/api/canchas',
             retos: '/api/retos',
             solicitudes: '/api/solicitudes',
+            pistasHome: '/api/pistas-home',
             reservas: '/api/reservas',
             historialReservas: '/api/historial-reservas',
             mensajes: '/api/mensajes',
@@ -36,6 +39,7 @@ class Server {
 
     async conectarDB(){
         await dbConnection();
+        await ensureSystemRoles();
     }
 
     middlewares(){
@@ -52,6 +56,7 @@ class Server {
     }
 
     routes() {
+        this.app.use(this.paths.adminGeneral, require('../routes/admin-general'));
         this.app.use(this.paths.usuarios, require('../routes/usuarios'));
         this.app.use(this.paths.auth, require('../routes/auth'));
         this.app.use(this.paths.deportes, require('../routes/deportes'));
@@ -62,6 +67,7 @@ class Server {
         this.app.use(this.paths.canchas, require('../routes/canchas'));
         this.app.use(this.paths.retos, require('../routes/retos'));
         this.app.use(this.paths.solicitudes, require('../routes/solicitudes'));
+        this.app.use(this.paths.pistasHome, require('../routes/pistas-home'));
         this.app.use(this.paths.reservas, require('../routes/reservas'));
         this.app.use(this.paths.historialReservas, require('../routes/historial-reserva'));
         this.app.use(this.paths.mensajes, require('../routes/mensajes'));

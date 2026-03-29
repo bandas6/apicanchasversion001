@@ -101,6 +101,30 @@ const esRolValido = async (rol = '') => {
 
 }
 
+const esRolAdministrableValido = async (rol = '') => {
+    const allowedRoles = ['USER_ROL', 'ADMIN_ROL'];
+
+    if (!allowedRoles.includes(rol)) {
+        throw new Error(`El rol ${rol} no es administrable`);
+    }
+}
+
+const esRolGeneralAdministrableValido = async (rol = '') => {
+    const allowedRoles = ['ADMIN_ROL', 'ADMIN_GENERAL_ROL'];
+
+    if (!allowedRoles.includes(rol)) {
+        throw new Error(`El rol ${rol} no es valido para gestion general`);
+    }
+}
+
+const esEstadoIdentidadValido = async (estado = '') => {
+    const allowedStates = ['pendiente', 'aprobada', 'rechazada'];
+
+    if (!allowedStates.includes(estado)) {
+        throw new Error(`El estado de identidad ${estado} no es valido`);
+    }
+}
+
 
 module.exports = {
     usuarioExiste,
@@ -110,5 +134,8 @@ module.exports = {
     equipoExiste,
     usuarioConEquipoRegistrado,
     partidoExiste,
-    nombreComplejoExise
+    nombreComplejoExise,
+    esRolAdministrableValido,
+    esRolGeneralAdministrableValido,
+    esEstadoIdentidadValido
 }

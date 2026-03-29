@@ -47,10 +47,44 @@ const UsuarioSchema = new Schema({
         trim: true,
         default: '',
     },
+    pieDominante: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    estiloJuego: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    disponibilidadHabitual: {
+        type: String,
+        trim: true,
+        default: '',
+    },
     deportesFavoritos: [{
         type: String,
         trim: true,
     }],
+    deportesPrincipales: [{
+        type: String,
+        trim: true,
+    }],
+    zonaPreferida: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    horariosPreferidos: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    tipoCanchaPreferida: {
+        type: String,
+        trim: true,
+        default: '',
+    },
     fotoUrl: {
         type: String,
         trim: true,
@@ -79,12 +113,75 @@ const UsuarioSchema = new Schema({
     google: {
         type: Boolean,
         default: false
+    },
+    refreshTokenHash: {
+        type: String,
+        default: '',
+    },
+    identidadVerificada: {
+        type: Boolean,
+        default: false,
+    },
+    identidadEstado: {
+        type: String,
+        default: 'no_enviada',
+    },
+    identidadTipoDocumento: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    identidadNumeroDocumento: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    identidadNombreCompleto: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    identidadDocumentoFrontalUrl: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    identidadDocumentoPosteriorUrl: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    identidadSelfieUrl: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    identidadObservaciones: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    identidadSolicitadaAt: {
+        type: Date,
+        default: null,
+    },
+    identidadIntentos: {
+        type: Number,
+        default: 0,
+    },
+    identidadVerificadaAt: {
+        type: Date,
+        default: null,
+    },
+    identidadVerificadaPor: {
+        type: Schema.Types.ObjectId,
+        ref: 'Usuario',
     }
 });
 
 
 UsuarioSchema.methods.toJSON = function () {
-    const { __v, _id, password, ...usuario } = this.toObject();
+    const { __v, _id, password, refreshTokenHash, ...usuario } = this.toObject();
     usuario.imagenUrl = usuario.fotoUrl || usuario.nombre_archivo_imagen || '';
     usuario.uid = _id;
     return usuario;

@@ -5,11 +5,13 @@ const DeportesSchema = new Schema({
         type: String,
         required: [true, 'El nombre del deporte es obligatorio'],
         trim: true,
+        unique: true,
     },
     slug: {
         type: String,
         lowercase: true,
         trim: true,
+        unique: true,
     },
     descripcion: {
         type: String,
@@ -19,6 +21,23 @@ const DeportesSchema = new Schema({
         type: Boolean,
         default: true,
     },
+});
+
+DeportesSchema.pre('validate', function (next) {
+    if (this.nombre) {
+        this.nombre = String(this.nombre).trim();
+    }
+
+    if (!this.slug && this.nombre) {
+        this.slug = this.nombre
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+    }
+
+    next();
 });
 
 DeportesSchema.methods.toJSON = function () {

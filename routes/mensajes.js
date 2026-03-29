@@ -3,6 +3,7 @@ const { validarCampos } = require("../middlewares/validar-campos");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
 const { recibirMensaje, enviarMensaje } = require("../controllers/mensajes.controller");
+const { puedeLeerMensajesUsuario } = require("../middlewares/validar-roles");
 
 const router = Router()
 
@@ -15,7 +16,8 @@ router.post('/enviar', [
 // Recibir mensajes
 router.get('/recibir/:usuarioId', [
     validarJWT,
-    check('id', 'No es un id valido').isMongoId(),
+    puedeLeerMensajesUsuario,
+    check('usuarioId', 'No es un id valido').isMongoId(),
     validarCampos,
 ], recibirMensaje);
 
