@@ -1,6 +1,7 @@
 const { request, response } = require("express");
 const Complejos = require("../models/complejos");
 const Canchas = require("../models/canchas");
+const Reservas = require("../models/reservas");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const { uploadBufferToCloudinary } = require("../helpers/cloudinary");
 require("../models/deportes");
@@ -154,6 +155,125 @@ const resolveComplejoCover = ({
     return '';
 };
 
+const parseHourToMinutes = (value = '') => {
+    const [hour = '0', minute = '0'] = String(value || '').split(':');
+    return (Number(hour) * 60) + Number(minute);
+};
+
+const getDayOfWeek = (date) => {
+    const jsDay = new Date(date).getDay();
+    return jsDay === 0 ? 7 : jsDay;
+};
+
+const hasTimeConflict = ({ startA, endA, startB, endB }) => (
+    startA < endB && startB < endA
+);
+
+const hasAvailableSlotsToday = ({ cancha, reservas = [], now = new Date() }) => {
+    if (!cancha || cancha.activa === false || cancha.enMantenimiento === true) {
+        return false;
+    }
+
+    const diaSemana = getDayOfWeek(now);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const tarifas = Array.isArray(cancha.tarifas) ? cancha.tarifas : [];
+    const disponibilidad = Array.isArray(cancha.disponibilidadSemanal)
+        ? cancha.disponibilidadSemanal
+        : [];
+
+    const slotsTarifa = tarifas
+        .filter((item) => item?.activo !== false && Number(item?.diaSemana) === diaSemana)
+        .map((item) => ({
+            horaInicio: item.horaInicio,
+            horaFin: item.horaFin,
+        }));
+
+    const slotsBase = disponibilidad
+        .filter((item) => item?.disponible !== false && Number(item?.diaSemana) === diaSemana)
+        .map((item) => ({
+            horaInicio: item.horaInicio,
+            horaFin: item.horaFin,
+        }));
+
+    const slots = (slotsTarifa.length > 0 ? slotsTarifa : slotsBase)
+        .filter((item) => item.horaInicio && item.horaFin);
+
+    return slots.some((slot) => {
+        const startMinutes = parseHourToMinutes(slot.horaInicio);
+        const endMinutes = parseHourToMinutes(slot.horaFin);
+
+        if (endMinutes <= currentMinutes) {
+            return false;
+        }
+
+        const ocupado = reservas.some((item) => {
+            if (item.estado !== 'confirmada') {
+                return false;
+            }
+
+            const existingStart = parseHourToMinutes(item.horaInicio);
+            const existingEnd = parseHourToMinutes(item.horaFin);
+
+            return hasTimeConflict({
+                startA: startMinutes,
+                endA: endMinutes,
+                startB: existingStart,
+                endB: existingEnd,
+            });
+        });
+
+        return !ocupado;
+    });
+};
+
+const attachTodayAvailability = async (complejos = []) => {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const canchaIds = complejos
+        .flatMap((complejo) => (Array.isArray(complejo.canchas) ? complejo.canchas : []))
+        .map((cancha) => String(cancha?._id || cancha?.uid || '').trim())
+        .filter(Boolean);
+
+    const reservas = canchaIds.length > 0
+        ? await Reservas.find({
+            cancha: { $in: canchaIds },
+            fecha: {
+                $gte: startOfDay,
+                $lt: endOfDay,
+            },
+            estado: 'confirmada',
+        }).select('cancha horaInicio horaFin estado')
+        : [];
+
+    const reservasByCancha = reservas.reduce((acc, reserva) => {
+        const canchaId = String(reserva.cancha || '').trim();
+        if (!canchaId) {
+            return acc;
+        }
+
+        if (!acc[canchaId]) {
+            acc[canchaId] = [];
+        }
+        acc[canchaId].push(reserva);
+        return acc;
+    }, {});
+
+    return complejos.map((doc) => {
+        const plain = typeof doc.toJSON === 'function' ? doc.toJSON() : doc;
+        const canchas = Array.isArray(plain.canchas) ? plain.canchas : [];
+        plain.disponibleHoy = canchas.some((cancha) => {
+            const canchaId = String(cancha?._id || cancha?.uid || '').trim();
+            return hasAvailableSlotsToday({
+                cancha,
+                reservas: reservasByCancha[canchaId] || [],
+                now,
+            });
+        });
+        return plain;
+    });
+};
+
 const guardarComplejo = async (req = request, res = response) => {
     try {
         const data = normalizarPayloadComplejo(req.body);
@@ -301,11 +421,12 @@ const obtenerComplejos = async (req = request, res = response) => {
                 .skip(Number(desde))
                 .limit(Number(limit))
         ]);
+        const complejosConDisponibilidad = await attachTodayAvailability(complejos);
 
         return res.status(200).json({
             ok: true,
             total,
-            complejos
+            complejos: complejosConDisponibilidad
         });
     } catch (error) {
         return res.status(500).json({
@@ -324,8 +445,11 @@ const obtenerComplejo = async (req = request, res = response) => {
             .populate('administradores')
             .populate('deportes')
             .populate('canchas');
+        const [complejoConDisponibilidad] = await attachTodayAvailability(
+            complejo ? [complejo] : [],
+        );
 
-        if (!complejo) {
+        if (!complejoConDisponibilidad) {
             return res.status(404).json({
                 ok: false,
                 error: 'Complejo no encontrado'
@@ -335,7 +459,7 @@ const obtenerComplejo = async (req = request, res = response) => {
         return res.status(200).json({
             ok: true,
             total: 1,
-            complejo
+            complejo: complejoConDisponibilidad
         });
     } catch (error) {
         return res.status(500).json({

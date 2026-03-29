@@ -52,6 +52,9 @@ const sameCalendarDay = (a, b) => (
     a.getDate() === b.getDate()
 );
 
+const RESERVA_RECHAZADA_POR_OCUPACION =
+    'Solicitud rechazada: la cancha ya fue ocupada en ese horario.';
+
 const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved = true }) => {
     const diaSemana = getDayOfWeek(fecha);
     const tarifas = Array.isArray(cancha.tarifas) ? cancha.tarifas : [];
@@ -104,7 +107,7 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
             motivo = 'horario_pasado';
         } else {
             const ocupado = reservas.some((item) => {
-                if (!['pendiente', 'confirmada'].includes(item.estado)) {
+                if (item.estado !== 'confirmada') {
                     return false;
                 }
                 const existingStart = parseHourToMinutes(item.horaInicio);
@@ -163,7 +166,7 @@ const guardarReserva = async (req = request, res = response) => {
                 $gte: startOfDay,
                 $lt: endOfDay,
             },
-            estado: { $in: ['pendiente', 'confirmada'] },
+            estado: 'confirmada',
         });
 
         const hayConflicto = reservasExistentes.some((item) => {
@@ -228,7 +231,7 @@ const guardarReserva = async (req = request, res = response) => {
 
             const reservaActivaExistente = await Reservas.findOne({
                 usuario: data.usuario,
-                estado: { $in: ['pendiente', 'confirmada'] },
+                estado: 'confirmada',
             });
 
             if (reservaActivaExistente) {
@@ -278,7 +281,7 @@ const guardarReserva = async (req = request, res = response) => {
                     $gte: startOfDay,
                     $lt: endOfDay,
                 },
-                estado: { $in: ['pendiente', 'confirmada'] },
+                estado: 'confirmada',
             });
 
             if (reservasActivasDelDia >= limiteDiario) {
@@ -334,17 +337,122 @@ const actualizarReserva = async (req = request, res = response) => {
     const { id } = req.params;
 
     try {
+        const reservaActual = await Reservas.findById(id);
+
+        if (!reservaActual) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada'
+            });
+        }
+
+        const nextState = String(req.body?.estado || reservaActual.estado || '').trim();
+
+        if (nextState === 'confirmada') {
+            const reservaDate = new Date(reservaActual.fecha);
+            const startOfDay = new Date(
+                reservaDate.getFullYear(),
+                reservaDate.getMonth(),
+                reservaDate.getDate(),
+            );
+            const endOfDay = new Date(
+                reservaDate.getFullYear(),
+                reservaDate.getMonth(),
+                reservaDate.getDate() + 1,
+            );
+            const conflictingConfirmed = await Reservas.find({
+                _id: { $ne: reservaActual._id },
+                cancha: reservaActual.cancha,
+                fecha: {
+                    $gte: startOfDay,
+                    $lt: endOfDay,
+                },
+                estado: 'confirmada',
+            });
+
+            const hasConfirmedConflict = conflictingConfirmed.some((item) => {
+                const existingStart = parseHourToMinutes(item.horaInicio);
+                const existingEnd = parseHourToMinutes(item.horaFin);
+
+                return hasTimeConflict({
+                    startA: parseHourToMinutes(reservaActual.horaInicio),
+                    endA: parseHourToMinutes(reservaActual.horaFin),
+                    startB: existingStart,
+                    endB: existingEnd,
+                });
+            });
+
+            if (hasConfirmedConflict) {
+                return res.status(409).json({
+                    ok: false,
+                    error: 'No se puede confirmar esta reserva porque la cancha ya fue ocupada en ese horario'
+                });
+            }
+        }
+
         const reservas = await Reservas.findByIdAndUpdate(id, { ...req.body }, { new: true })
             .populate('usuario')
             .populate('complejo')
             .populate('cancha')
             .populate('deporte');
 
-        if (!reservas) {
-            return res.status(404).json({
-                ok: false,
-                error: 'Reserva no encontrada'
+        if (nextState === 'confirmada') {
+            const reservaDate = new Date(reservas.fecha);
+            const startOfDay = new Date(
+                reservaDate.getFullYear(),
+                reservaDate.getMonth(),
+                reservaDate.getDate(),
+            );
+            const endOfDay = new Date(
+                reservaDate.getFullYear(),
+                reservaDate.getMonth(),
+                reservaDate.getDate() + 1,
+            );
+            const pendientesSolapadas = await Reservas.find({
+                _id: { $ne: reservas._id },
+                cancha: reservas.cancha?._id || reservas.cancha,
+                fecha: {
+                    $gte: startOfDay,
+                    $lt: endOfDay,
+                },
+                estado: 'pendiente',
             });
+
+            const rejectedIds = [];
+
+            for (const item of pendientesSolapadas) {
+                const overlap = hasTimeConflict({
+                    startA: parseHourToMinutes(reservas.horaInicio),
+                    endA: parseHourToMinutes(reservas.horaFin),
+                    startB: parseHourToMinutes(item.horaInicio),
+                    endB: parseHourToMinutes(item.horaFin),
+                });
+
+                if (!overlap) {
+                    continue;
+                }
+
+                item.estado = 'rechazada';
+                item.observaciones = RESERVA_RECHAZADA_POR_OCUPACION;
+                await item.save();
+                rejectedIds.push(String(item._id));
+            }
+
+            if (rejectedIds.length > 0) {
+                await auditAdminGeneralAction({
+                    req,
+                    action: 'REJECT_OVERLAPPING_RESERVAS',
+                    resourceType: 'reserva',
+                    resourceId: reservas._id,
+                    targetUsuario: reservas.usuario?._id || reservas.usuario || null,
+                    summary: `Se rechazaron ${rejectedIds.length} solicitud(es) solapadas`,
+                    metadata: {
+                        reservaConfirmada: reservas._id,
+                        rechazadas: rejectedIds,
+                        motivo: RESERVA_RECHAZADA_POR_OCUPACION,
+                    },
+                });
+            }
         }
 
         await auditAdminGeneralAction({
@@ -431,7 +539,7 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
                 $gte: startOfDay,
                 $lt: endOfDay,
             },
-            estado: { $in: ['pendiente', 'confirmada'] },
+            estado: 'confirmada',
         }).sort({ horaInicio: 1 });
 
         const identityApproved = req.usuarioAuth?.rol && req.usuarioAuth.rol !== 'USER_ROL'

@@ -63,7 +63,7 @@ const ReservasSchema = new Schema({
     },
     estado: {
         type: String,
-        enum: ['pendiente', 'confirmada', 'cancelada', 'completada'],
+        enum: ['pendiente', 'confirmada', 'rechazada', 'cancelada', 'completada'],
         default: 'pendiente',
     },
     observaciones: {
