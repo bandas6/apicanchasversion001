@@ -7,12 +7,22 @@ const ensureCloudinaryConfigured = () => {
         return;
     }
 
+    const cloudinaryUrl = String(process.env.CLOUDINARY_URL || '').trim();
     const cloudName = String(process.env.CLOUDINARY_CLOUD_NAME || '').trim();
     const apiKey = String(process.env.CLOUDINARY_API_KEY || '').trim();
     const apiSecret = String(process.env.CLOUDINARY_API_SECRET || '').trim();
 
+    if (cloudinaryUrl) {
+        cloudinary.config({
+            cloudinary_url: cloudinaryUrl,
+            secure: true,
+        });
+        configured = true;
+        return;
+    }
+
     if (!cloudName || !apiKey || !apiSecret) {
-        throw new Error('Cloudinary no esta configurado. Define CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET');
+        throw new Error('Cloudinary no esta configurado. Define CLOUDINARY_URL o CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET');
     }
 
     cloudinary.config({
