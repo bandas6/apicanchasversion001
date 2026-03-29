@@ -229,17 +229,6 @@ const guardarReserva = async (req = request, res = response) => {
                 });
             }
 
-            const reservaActivaExistente = await Reservas.findOne({
-                usuario: data.usuario,
-                estado: 'confirmada',
-            });
-
-            if (reservaActivaExistente) {
-                return res.status(409).json({
-                    ok: false,
-                    error: 'Este usuario ya tiene una reserva activa y no puede crear otra hasta finalizarla o cancelarla'
-                });
-            }
         }
 
         const cancha = await Canchas.findById(data.cancha);
@@ -268,27 +257,6 @@ const guardarReserva = async (req = request, res = response) => {
                     error: 'No puedes crear reservas en un complejo que no administras'
                 });
             }
-            }
-        }
-
-        if (data.usuario && complejo) {
-            const limiteDiario = Number(complejo.maxReservasPorUsuarioPorDia || 1);
-
-            const reservasActivasDelDia = await Reservas.countDocuments({
-                usuario: data.usuario,
-                complejo: complejo._id,
-                fecha: {
-                    $gte: startOfDay,
-                    $lt: endOfDay,
-                },
-                estado: 'confirmada',
-            });
-
-            if (reservasActivasDelDia >= limiteDiario) {
-                return res.status(409).json({
-                    ok: false,
-                    error: `Este usuario ya alcanzo el maximo de ${limiteDiario} reserva(s) activa(s) para este dia en el complejo`
-                });
             }
         }
 
@@ -387,6 +355,29 @@ const actualizarReserva = async (req = request, res = response) => {
                     ok: false,
                     error: 'No se puede confirmar esta reserva porque la cancha ya fue ocupada en ese horario'
                 });
+            }
+
+            if (reservaActual.usuario && reservaActual.complejo) {
+                const complejo = await Complejos.findById(reservaActual.complejo);
+                const limiteDiario = Number(complejo?.maxReservasPorUsuarioPorDia || 1);
+
+                const reservasConfirmadasDelDia = await Reservas.countDocuments({
+                    _id: { $ne: reservaActual._id },
+                    usuario: reservaActual.usuario,
+                    complejo: reservaActual.complejo,
+                    fecha: {
+                        $gte: startOfDay,
+                        $lt: endOfDay,
+                    },
+                    estado: 'confirmada',
+                });
+
+                if (reservasConfirmadasDelDia >= limiteDiario) {
+                    return res.status(409).json({
+                        ok: false,
+                        error: `No se puede confirmar esta solicitud porque el usuario ya alcanzo el maximo de ${limiteDiario} reserva(s) confirmada(s) para este dia en este complejo`
+                    });
+                }
             }
         }
 
