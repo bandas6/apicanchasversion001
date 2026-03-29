@@ -136,6 +136,11 @@ const obtenerMiUsuario = async (req = require, res = response) => {
             usuario,
         });
     } catch (error) {
+        console.error('[Usuarios] Error actualizando foto de perfil', {
+            message: error.message,
+            name: error.name,
+            http_code: error.http_code,
+        });
         return res.status(500).json({
             ok: false,
             error: error.message,
@@ -457,6 +462,12 @@ const actualizarRolUsuario = async (req = require, res = response) => {
             msg: `Rol actualizado a ${rol}`
         });
     } catch (error) {
+        console.error('[Usuarios] Error enviando identidad', {
+            message: error.message,
+            name: error.name,
+            http_code: error.http_code,
+            response: error.response,
+        });
         return res.status(500).json({
             ok: false,
             error: error.message
