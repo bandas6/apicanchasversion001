@@ -54,6 +54,52 @@ const sameCalendarDay = (a, b) => (
 
 const RESERVA_RECHAZADA_POR_OCUPACION =
     'Solicitud rechazada: la cancha ya fue ocupada en ese horario.';
+const RESERVA_EXPIRADA_POR_TIEMPO =
+    'La solicitud vencio porque el horario solicitado ya paso sin confirmacion.';
+
+const hasReservationExpired = (reserva, now = new Date()) => {
+    if (!reserva || reserva.estado !== 'pendiente' || !reserva.fecha || !reserva.horaFin) {
+        return false;
+    }
+
+    const fecha = new Date(reserva.fecha);
+    if (Number.isNaN(fecha.getTime())) {
+        return false;
+    }
+
+    const [hour = '0', minute = '0'] = String(reserva.horaFin).split(':');
+    const endAt = new Date(
+        fecha.getFullYear(),
+        fecha.getMonth(),
+        fecha.getDate(),
+        Number(hour),
+        Number(minute),
+        0,
+        0,
+    );
+
+    return endAt.getTime() <= now.getTime();
+};
+
+const expirePendingReservations = async (reservas = []) => {
+    const now = new Date();
+    const expiradas = [];
+
+    for (const reserva of reservas) {
+        if (!hasReservationExpired(reserva, now)) {
+            continue;
+        }
+
+        reserva.estado = 'expirada';
+        if (!String(reserva.observaciones || '').trim()) {
+            reserva.observaciones = RESERVA_EXPIRADA_POR_TIEMPO;
+        }
+        await reserva.save();
+        expiradas.push(reserva);
+    }
+
+    return expiradas;
+};
 
 const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved = true }) => {
     const diaSemana = getDayOfWeek(fecha);
@@ -314,6 +360,19 @@ const actualizarReserva = async (req = request, res = response) => {
             });
         }
 
+        if (hasReservationExpired(reservaActual)) {
+            reservaActual.estado = 'expirada';
+            if (!String(reservaActual.observaciones || '').trim()) {
+                reservaActual.observaciones = RESERVA_EXPIRADA_POR_TIEMPO;
+            }
+            await reservaActual.save();
+
+            return res.status(409).json({
+                ok: false,
+                error: 'La solicitud ya expiro porque el horario solicitado ya paso sin confirmacion'
+            });
+        }
+
         const nextState = String(req.body?.estado || reservaActual.estado || '').trim();
 
         if (nextState === 'confirmada') {
@@ -486,6 +545,8 @@ const obtenerReservasCancha = async (req = request, res = response) => {
                 .sort({ fecha: 1, horaInicio: 1 })
         ]);
 
+        await expirePendingReservations(reservas);
+
         return res.status(200).json({
             ok: true,
             total,
@@ -578,6 +639,8 @@ const obtenerReservas = async (req = request, res = response) => {
                 .sort({ fecha: 1, horaInicio: 1 })
         ]);
 
+        await expirePendingReservations(reservas);
+
         return res.status(200).json({
             ok: true,
             total,
@@ -613,6 +676,8 @@ const obtenerMisReservas = async (req = request, res = response) => {
                 .sort({ fecha: 1, horaInicio: 1 }),
         ]);
 
+        await expirePendingReservations(reservas);
+
         return res.status(200).json({
             ok: true,
             total,
@@ -641,6 +706,19 @@ const cancelarMiReserva = async (req = request, res = response) => {
             return res.status(404).json({
                 ok: false,
                 error: 'Reserva no encontrada'
+            });
+        }
+
+        if (hasReservationExpired(reserva)) {
+            reserva.estado = 'expirada';
+            if (!String(reserva.observaciones || '').trim()) {
+                reserva.observaciones = RESERVA_EXPIRADA_POR_TIEMPO;
+            }
+            await reserva.save();
+
+            return res.status(409).json({
+                ok: false,
+                error: 'La solicitud ya expiro porque el horario solicitado ya paso sin confirmacion'
             });
         }
 
@@ -697,6 +775,8 @@ const obtenerReserva = async (req = request, res = response) => {
                 error: 'Reserva no encontrada'
             });
         }
+
+        await expirePendingReservations([reserva]);
 
         return res.status(200).json({
             ok: true,
