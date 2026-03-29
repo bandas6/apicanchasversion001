@@ -4,11 +4,68 @@ const RoleChangeAudit = require("../models/role-change-audits");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const bcryptjs = require('bcryptjs');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
+const {
+    CATALOGOS_PERFIL,
+    normalizeCatalogValue,
+    normalizeScheduleValues,
+    resolveAllowedPositions,
+    resolveAllowedCourtTypes,
+    uniqueStrings,
+} = require('../helpers/profile-catalogs');
+
+const getSelectedSports = (payload = {}) =>
+    uniqueStrings([
+        ...(Array.isArray(payload.deportesPrincipales) ? payload.deportesPrincipales : []),
+        ...(Array.isArray(payload.deportesFavoritos) ? payload.deportesFavoritos : []),
+    ]);
+
+const validateProfileCatalogs = (payload = {}) => {
+    const selectedSports = getSelectedSports(payload);
+    const validaciones = [
+        ['ciudad', CATALOGOS_PERFIL.ciudades, 'Debes seleccionar una ciudad valida'],
+        ['zonaPreferida', CATALOGOS_PERFIL.zonas, 'Debes seleccionar una zona valida'],
+        ['nivelJuego', CATALOGOS_PERFIL.niveles, 'Debes seleccionar un nivel valido'],
+        ['pieDominante', CATALOGOS_PERFIL.pieDominante, 'Debes seleccionar tu perfil dominante'],
+        ['estiloJuego', CATALOGOS_PERFIL.estiloJuego, 'Debes seleccionar un estilo de juego valido'],
+        ['disponibilidadHabitual', CATALOGOS_PERFIL.disponibilidadHabitual, 'Debes seleccionar una disponibilidad valida'],
+    ];
+
+    for (const [key, allowedValues, message] of validaciones) {
+        if (!payload[key]) {
+            continue;
+        }
+
+        const normalized = normalizeCatalogValue(payload[key], allowedValues);
+        if (!normalized) {
+            throw new Error(message);
+        }
+        payload[key] = normalized;
+    }
+
+    if (payload.posicion) {
+        const posicion = normalizeCatalogValue(payload.posicion, resolveAllowedPositions(selectedSports));
+        if (!posicion) {
+            throw new Error('La posicion preferida no coincide con los deportes seleccionados');
+        }
+        payload.posicion = posicion;
+    }
+
+    if (payload.tipoCanchaPreferida) {
+        const tipoCancha = normalizeCatalogValue(
+            payload.tipoCanchaPreferida,
+            resolveAllowedCourtTypes(selectedSports),
+        );
+        if (!tipoCancha) {
+            throw new Error('El tipo de cancha preferida no coincide con los deportes seleccionados');
+        }
+        payload.tipoCanchaPreferida = tipoCancha;
+    }
+};
 
 const normalizarPayloadUsuario = (data = {}) => {
     const payload = { ...data };
 
-    ['nombre', 'apellido', 'correo', 'posicion', 'bio', 'ciudad', 'nivelJuego', 'pieDominante', 'estiloJuego', 'disponibilidadHabitual', 'zonaPreferida', 'horariosPreferidos', 'tipoCanchaPreferida', 'fotoUrl', 'nombre_archivo_imagen', 'identidadTipoDocumento', 'identidadNumeroDocumento', 'identidadNombreCompleto', 'identidadDocumentoFrontalUrl', 'identidadDocumentoPosteriorUrl', 'identidadSelfieUrl', 'identidadObservaciones']
+    ['nombre', 'apellido', 'correo', 'posicion', 'bio', 'ciudad', 'nivelJuego', 'pieDominante', 'estiloJuego', 'disponibilidadHabitual', 'zonaPreferida', 'tipoCanchaPreferida', 'fotoUrl', 'nombre_archivo_imagen', 'identidadTipoDocumento', 'identidadNumeroDocumento', 'identidadNombreCompleto', 'identidadDocumentoFrontalUrl', 'identidadDocumentoPosteriorUrl', 'identidadSelfieUrl', 'identidadObservaciones']
         .forEach((key) => {
             if (typeof payload[key] === 'string') {
                 payload[key] = payload[key].trim();
@@ -19,11 +76,11 @@ const normalizarPayloadUsuario = (data = {}) => {
         if (payload[key] === '' || payload[key] == null) {
             payload[key] = [];
         } else if (Array.isArray(payload[key])) {
-            payload[key] = payload[key]
-                .map((item) => String(item).trim())
-                .filter(Boolean);
+            payload[key] = uniqueStrings(payload[key]);
         }
     });
+
+    payload.horariosPreferidos = normalizeScheduleValues(payload.horariosPreferidos);
 
     if (payload.puntuacion !== undefined) {
         payload.puntuacion = Number(payload.puntuacion || 0);
@@ -32,6 +89,8 @@ const normalizarPayloadUsuario = (data = {}) => {
     if (payload.valoracion !== undefined) {
         payload.valoracion = Number(payload.valoracion || 0);
     }
+
+    validateProfileCatalogs(payload);
 
     return payload;
 };

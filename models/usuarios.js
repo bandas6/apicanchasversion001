@@ -75,11 +75,10 @@ const UsuarioSchema = new Schema({
         trim: true,
         default: '',
     },
-    horariosPreferidos: {
+    horariosPreferidos: [{
         type: String,
         trim: true,
-        default: '',
-    },
+    }],
     tipoCanchaPreferida: {
         type: String,
         trim: true,
