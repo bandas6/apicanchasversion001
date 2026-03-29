@@ -10,6 +10,80 @@ const parseHourToMinutes = (value = '') => {
     return (Number(hour) * 60) + Number(minute);
 };
 
+const validateDisponibilidadSemanal = (disponibilidad = []) => {
+    if (!Array.isArray(disponibilidad)) {
+        return 'La disponibilidad semanal debe ser una lista';
+    }
+
+    if (disponibilidad.length === 0) {
+        return 'Debes definir al menos un horario base disponible';
+    }
+
+    const groupedByDay = new Map();
+
+    for (const bloque of disponibilidad) {
+        const diaSemana = Number(bloque?.diaSemana);
+        const horaInicio = bloque?.horaInicio;
+        const horaFin = bloque?.horaFin;
+
+        if (!diaSemana || diaSemana < 1 || diaSemana > 7) {
+            return 'Cada bloque de disponibilidad debe tener un diaSemana valido entre 1 y 7';
+        }
+
+        if (!horaInicio || !horaFin) {
+            return 'Cada bloque de disponibilidad debe incluir horaInicio y horaFin';
+        }
+
+        const inicio = parseHourToMinutes(horaInicio);
+        const fin = parseHourToMinutes(horaFin);
+
+        if (fin <= inicio) {
+            return `La disponibilidad del dia ${diaSemana} tiene un rango horario invalido`;
+        }
+
+        const dayBlocks = groupedByDay.get(diaSemana) ?? [];
+        dayBlocks.push({ inicio, fin });
+        groupedByDay.set(diaSemana, dayBlocks);
+    }
+
+    for (const [, dayBlocks] of groupedByDay.entries()) {
+        dayBlocks.sort((a, b) => a.inicio - b.inicio);
+        for (let i = 1; i < dayBlocks.length; i++) {
+            if (dayBlocks[i].inicio < dayBlocks[i - 1].fin) {
+                return 'Existen bloques de disponibilidad solapados en el mismo dia';
+            }
+        }
+    }
+
+    return null;
+};
+
+const buildDisponibilidadFromTarifas = (tarifas = []) => {
+    const unique = new Map();
+
+    for (const tarifa of tarifas) {
+        const diaSemana = Number(tarifa?.diaSemana);
+        const horaInicio = tarifa?.horaInicio;
+        const horaFin = tarifa?.horaFin;
+
+        if (!diaSemana || diaSemana < 1 || diaSemana > 7 || !horaInicio || !horaFin) {
+            continue;
+        }
+
+        const key = `${diaSemana}|${horaInicio}|${horaFin}`;
+        if (!unique.has(key)) {
+            unique.set(key, {
+                diaSemana,
+                horaInicio,
+                horaFin,
+                disponible: true,
+            });
+        }
+    }
+
+    return Array.from(unique.values());
+};
+
 const validateTarifas = (tarifas = []) => {
     if (!Array.isArray(tarifas)) {
         return 'Las tarifas deben ser una lista';
@@ -154,18 +228,29 @@ const guardarCancha = async (req = request, res = response) => {
         const data = req.body;
         const precioHoraBase = Number(data.precioHoraBase ?? data.precioHora ?? 0);
         const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const disponibilidadSemanal = Array.isArray(data.disponibilidadSemanal)
+            ? data.disponibilidadSemanal
+            : buildDisponibilidadFromTarifas(Array.isArray(data.tarifas) ? data.tarifas : []);
         const tarifasExpandidas = tarifasEspeciales.length > 0
             ? expandTarifasEspeciales(tarifasEspeciales)
             : (Array.isArray(data.tarifas) ? data.tarifas : []);
         const tarifasError = tarifasEspeciales.length > 0
             ? validateTarifasEspeciales(tarifasEspeciales)
             : validateTarifas(data.tarifas ?? []);
+        const disponibilidadError = validateDisponibilidadSemanal(disponibilidadSemanal);
         const deporte = await resolveDeporte(data);
 
         if (tarifasError) {
             return res.status(400).json({
                 ok: false,
                 error: tarifasError
+            });
+        }
+
+        if (disponibilidadError) {
+            return res.status(400).json({
+                ok: false,
+                error: disponibilidadError
             });
         }
 
@@ -179,6 +264,7 @@ const guardarCancha = async (req = request, res = response) => {
         data.precioHora = data.precioHoraBase;
         data.tarifasEspeciales = tarifasEspeciales;
         data.tarifas = tarifasExpandidas;
+        data.disponibilidadSemanal = disponibilidadSemanal;
 
         const cancha = new Canchas(data);
 
@@ -276,18 +362,31 @@ const actualizarCancha = async (req = request, res = response) => {
     try {
         const precioHoraBase = Number(data.precioHoraBase ?? data.precioHora ?? 0);
         const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const disponibilidadSemanal = Array.isArray(data.disponibilidadSemanal)
+            ? data.disponibilidadSemanal
+            : null;
         const tarifasExpandidas = tarifasEspeciales.length > 0
             ? expandTarifasEspeciales(tarifasEspeciales)
             : (Array.isArray(data.tarifas) ? data.tarifas : []);
         const tarifasError = tarifasEspeciales.length > 0
             ? validateTarifasEspeciales(tarifasEspeciales)
             : validateTarifas(data.tarifas ?? []);
+        const disponibilidadError = Array.isArray(disponibilidadSemanal)
+            ? validateDisponibilidadSemanal(disponibilidadSemanal)
+            : null;
         const deporte = await resolveDeporte(data);
 
         if (tarifasError) {
             return res.status(400).json({
                 ok: false,
                 error: tarifasError
+            });
+        }
+
+        if (disponibilidadError) {
+            return res.status(400).json({
+                ok: false,
+                error: disponibilidadError
             });
         }
 
@@ -304,6 +403,9 @@ const actualizarCancha = async (req = request, res = response) => {
         if (Array.isArray(data.tarifas) || tarifasEspeciales.length > 0) {
             data.tarifasEspeciales = tarifasEspeciales;
             data.tarifas = tarifasExpandidas;
+        }
+        if (Array.isArray(disponibilidadSemanal)) {
+            data.disponibilidadSemanal = disponibilidadSemanal;
         }
 
         const canchaActualizada = await Canchas.findByIdAndUpdate(

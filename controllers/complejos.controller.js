@@ -181,13 +181,6 @@ const hasAvailableSlotsToday = ({ cancha, reservas = [], now = new Date() }) => 
         ? cancha.disponibilidadSemanal
         : [];
 
-    const slotsTarifa = tarifas
-        .filter((item) => item?.activo !== false && Number(item?.diaSemana) === diaSemana)
-        .map((item) => ({
-            horaInicio: item.horaInicio,
-            horaFin: item.horaFin,
-        }));
-
     const slotsBase = disponibilidad
         .filter((item) => item?.disponible !== false && Number(item?.diaSemana) === diaSemana)
         .map((item) => ({
@@ -195,7 +188,14 @@ const hasAvailableSlotsToday = ({ cancha, reservas = [], now = new Date() }) => 
             horaFin: item.horaFin,
         }));
 
-    const slots = (slotsTarifa.length > 0 ? slotsTarifa : slotsBase)
+    const slots = (slotsBase.length > 0
+        ? slotsBase
+        : tarifas
+            .filter((item) => item?.activo !== false && Number(item?.diaSemana) === diaSemana)
+            .map((item) => ({
+                horaInicio: item.horaInicio,
+                horaFin: item.horaFin,
+            })))
         .filter((item) => item.horaInicio && item.horaFin);
 
     return slots.some((slot) => {

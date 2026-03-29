@@ -27,6 +27,23 @@ const calculateReservaPrice = ({ cancha, fecha, horaInicio, horaFin }) => {
     const durationHours = (endMinutes - startMinutes) / 60;
     const diaSemana = getDayOfWeek(fecha);
     const tarifas = Array.isArray(cancha.tarifas) ? cancha.tarifas : [];
+    const tarifasEspeciales = Array.isArray(cancha.tarifasEspeciales) ? cancha.tarifasEspeciales : [];
+
+    const tarifaEspecialAplicable = tarifasEspeciales.find((tarifa) => {
+        const diasSemana = Array.isArray(tarifa?.diasSemana) ? tarifa.diasSemana.map(Number) : [];
+        if (tarifa?.activo === false || !diasSemana.includes(diaSemana)) {
+            return false;
+        }
+
+        const tarifaInicio = parseHourToMinutes(tarifa.horaInicio);
+        const tarifaFin = parseHourToMinutes(tarifa.horaFin);
+
+        return startMinutes >= tarifaInicio && endMinutes <= tarifaFin;
+    });
+
+    if (tarifaEspecialAplicable) {
+        return Number((durationHours * Number(tarifaEspecialAplicable.precio || 0)).toFixed(2));
+    }
 
     const tarifaAplicable = tarifas.find((tarifa) => {
         if (!tarifa.activo || tarifa.diaSemana !== diaSemana) {
@@ -43,7 +60,7 @@ const calculateReservaPrice = ({ cancha, fecha, horaInicio, horaFin }) => {
         return Number((durationHours * Number(tarifaAplicable.precio || 0)).toFixed(2));
     }
 
-    return Number((durationHours * Number(cancha.precioHora || 0)).toFixed(2));
+    return Number((durationHours * Number(cancha.precioHoraBase || cancha.precioHora || 0)).toFixed(2));
 };
 
 const sameCalendarDay = (a, b) => (
@@ -103,30 +120,31 @@ const expirePendingReservations = async (reservas = []) => {
 
 const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved = true }) => {
     const diaSemana = getDayOfWeek(fecha);
-    const tarifas = Array.isArray(cancha.tarifas) ? cancha.tarifas : [];
+    const tarifasEspeciales = Array.isArray(cancha.tarifasEspeciales) ? cancha.tarifasEspeciales : [];
     const disponibilidad = Array.isArray(cancha.disponibilidadSemanal)
         ? cancha.disponibilidadSemanal
         : [];
 
-    const baseSlots = tarifas
-        .filter((item) => item?.activo !== false && Number(item?.diaSemana) === diaSemana)
-        .map((item) => ({
-            horaInicio: item.horaInicio,
-            horaFin: item.horaFin,
-            precio: Number(item.precio || 0),
-            tipo: 'tarifa',
-        }));
-
-    const fallbackSlots = disponibilidad
+    const baseSlots = disponibilidad
         .filter((item) => item?.disponible !== false && Number(item?.diaSemana) === diaSemana)
         .map((item) => ({
             horaInicio: item.horaInicio,
             horaFin: item.horaFin,
-            precio: Number(cancha.precioHora || 0),
+            precio: Number(cancha.precioHoraBase || cancha.precioHora || 0),
             tipo: 'base',
         }));
 
-    const slots = (baseSlots.length > 0 ? baseSlots : fallbackSlots)
+    const fallbackSlots = Array.isArray(cancha.tarifas) ? cancha.tarifas : [];
+    const slots = (baseSlots.length > 0
+        ? baseSlots
+        : fallbackSlots
+            .filter((item) => item?.activo !== false && Number(item?.diaSemana) === diaSemana)
+            .map((item) => ({
+                horaInicio: item.horaInicio,
+                horaFin: item.horaFin,
+                precio: Number(item.precio || cancha.precioHoraBase || cancha.precioHora || 0),
+                tipo: 'legacy',
+            })))
         .filter((item) => item.horaInicio && item.horaFin);
 
     const now = new Date();
@@ -172,8 +190,26 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
             }
         }
 
+        const tarifaEspecialAplicable = tarifasEspeciales.find((tarifa) => {
+            const diasSemana = Array.isArray(tarifa?.diasSemana) ? tarifa.diasSemana.map(Number) : [];
+            if (tarifa?.activo === false || !diasSemana.includes(diaSemana)) {
+                return false;
+            }
+            const tarifaInicio = parseHourToMinutes(tarifa.horaInicio);
+            const tarifaFin = parseHourToMinutes(tarifa.horaFin);
+            return startMinutes >= tarifaInicio && endMinutes <= tarifaFin;
+        });
+
         return {
             ...slot,
+            precio: Number(
+                tarifaEspecialAplicable?.precio ||
+                slot.precio ||
+                cancha.precioHoraBase ||
+                cancha.precioHora ||
+                0
+            ),
+            tipo: tarifaEspecialAplicable ? 'excepcion' : slot.tipo,
             disponible,
             motivo,
         };
