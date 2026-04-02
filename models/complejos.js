@@ -37,6 +37,14 @@ const ComplejosSchema = new Schema({
         type: String,
         trim: true,
     },
+    telefonoContacto: {
+        type: String,
+        trim: true,
+    },
+    whatsappContacto: {
+        type: String,
+        trim: true,
+    },
     latitud: {
         type: String,
     },

@@ -11,6 +11,18 @@ const normalizarPayloadComplejo = (data = {}) => {
     const latitudNumerica = Number(payload.latitud);
     const longitudNumerica = Number(payload.longitud);
 
+    if (payload.telefonoContacto === '' || payload.telefonoContacto === undefined) {
+        delete payload.telefonoContacto;
+    } else if (payload.telefonoContacto !== null) {
+        payload.telefonoContacto = String(payload.telefonoContacto).trim();
+    }
+
+    if (payload.whatsappContacto === '' || payload.whatsappContacto === undefined) {
+        delete payload.whatsappContacto;
+    } else if (payload.whatsappContacto !== null) {
+        payload.whatsappContacto = String(payload.whatsappContacto).trim();
+    }
+
     if (
         (!payload.ubicacionGeo || typeof payload.ubicacionGeo !== 'object') &&
         Number.isFinite(latitudNumerica) &&
