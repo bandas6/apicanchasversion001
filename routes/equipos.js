@@ -20,7 +20,6 @@ router.get('/:id/jugadores', [
 ], obtenerJugadoresPorEquipo);
 
 router.get('/:id', [
-    validarJWT,
     check('id', 'No es un id valido').isMongoId(),
     validarCampos
 ], obtenerEquipo);

@@ -15,6 +15,7 @@ class Server {
             auth: '/api/auth',
             adminGeneral: '/api/admin-general',
             usuarios: '/api/usuarios',
+            jugadores: '/api/jugadores',
             deportes: '/api/deportes',
             equipos: '/api/equipos',
             listasMaestras: '/api/listas-maestras',
@@ -58,6 +59,7 @@ class Server {
     routes() {
         this.app.use(this.paths.adminGeneral, require('../routes/admin-general'));
         this.app.use(this.paths.usuarios, require('../routes/usuarios'));
+        this.app.use(this.paths.jugadores, require('../routes/jugadores'));
         this.app.use(this.paths.auth, require('../routes/auth'));
         this.app.use(this.paths.deportes, require('../routes/deportes'));
         this.app.use(this.paths.equipos, require('../routes/equipos'));

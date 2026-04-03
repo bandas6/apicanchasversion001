@@ -24,7 +24,7 @@ const {
     esEstadoIdentidadValido,
 } = require("../helpers/db-validators");
 const { validarCampos } = require("../middlewares/validar-campos");
-const { validarJWT } = require("../middlewares/validar-jwt");
+const { validarJWT, validarJWTOptional } = require("../middlewares/validar-jwt");
 const { uploadMemory } = require("../middlewares/upload-memory");
 const {
     esAdminRol,
@@ -35,7 +35,10 @@ const {
 
 const router = Router();
 
-router.get('/', obtenerUsuarios);
+router.get('/', [
+    validarJWTOptional,
+    validarCampos
+], obtenerUsuarios);
 
 router.get('/me', [
     validarJWT,
@@ -43,6 +46,7 @@ router.get('/me', [
 ], obtenerMiUsuario);
 
 router.get('/:id', [
+    validarJWTOptional,
     check('id', 'No es un id valido').isMongoId(),
     validarCampos
 ], obtenerUsuario);

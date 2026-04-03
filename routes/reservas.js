@@ -30,6 +30,12 @@ router.get('/', [
     validarCampos,
 ], obtenerReservas);
 
+router.get('/admin/mis-complejos', [
+    validarJWT,
+    esAdminRol,
+    validarCampos,
+], obtenerReservas);
+
 router.get('/cancha/:id', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,

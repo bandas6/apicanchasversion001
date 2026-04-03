@@ -129,13 +129,65 @@ const esReferenciaArchivoValida = (value = '') => {
         || normalized.startsWith('archivo_local:');
 };
 
+const isGeneralAdmin = (req = {}) => req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+
+const canReadFullUsuario = (req = {}, usuario = null) => {
+    if (!usuario) {
+        return false;
+    }
+
+    if (isGeneralAdmin(req)) {
+        return true;
+    }
+
+    return String(req.usuarioAuth?._id || '') === String(usuario._id || '');
+};
+
+const toPublicUsuario = (usuario = null) => {
+    if (!usuario) {
+        return null;
+    }
+
+    const source = typeof usuario.toJSON === 'function'
+        ? usuario.toJSON()
+        : { ...usuario };
+
+    return {
+        uid: source.uid || source._id,
+        nombre: source.nombre || '',
+        apellido: source.apellido || '',
+        imagenUrl: source.imagenUrl || source.fotoUrl || source.nombre_archivo_imagen || '',
+        fotoUrl: source.fotoUrl || '',
+        bio: source.bio || '',
+        ciudad: source.ciudad || '',
+        nivelJuego: source.nivelJuego || '',
+        posicion: source.posicion || '',
+        puntuacion: Number(source.puntuacion || 0),
+        valoracion: Number(source.valoracion || 0),
+        deportesFavoritos: Array.isArray(source.deportesFavoritos) ? source.deportesFavoritos : [],
+        deportesPrincipales: Array.isArray(source.deportesPrincipales) ? source.deportesPrincipales : [],
+        pieDominante: source.pieDominante || '',
+        estiloJuego: source.estiloJuego || '',
+        disponibilidadHabitual: source.disponibilidadHabitual || '',
+        zonaPreferida: source.zonaPreferida || '',
+        horariosPreferidos: Array.isArray(source.horariosPreferidos) ? source.horariosPreferidos : [],
+        tipoCanchaPreferida: source.tipoCanchaPreferida || '',
+        rol: source.rol || 'USER_ROL',
+        equipo_id: source.equipo_id || null,
+        estado: source.estado === true,
+    };
+};
+
 const obtenerUsuarios = async (req = require, res = response) => {
     try {
         const { limit = 0, desde = 0, rol, identidadVerificada, identidadEstado, destacados } = req.query;
         const query = { estado: true };
+        const fullAccess = isGeneralAdmin(req);
 
-        if (rol) {
+        if (rol && (fullAccess || rol === 'USER_ROL')) {
             query.rol = rol;
+        } else if (!fullAccess) {
+            query.rol = 'USER_ROL';
         }
 
         if (destacados === 'true') {
@@ -143,11 +195,11 @@ const obtenerUsuarios = async (req = require, res = response) => {
             query.identidadEstado = 'aprobada';
         }
 
-        if (identidadVerificada !== undefined) {
+        if (fullAccess && identidadVerificada !== undefined) {
             query.identidadVerificada = identidadVerificada === 'true';
         }
 
-        if (identidadEstado) {
+        if (fullAccess && identidadEstado) {
             query.identidadEstado = identidadEstado;
         }
 
@@ -164,7 +216,7 @@ const obtenerUsuarios = async (req = require, res = response) => {
         return res.status(200).json({
             ok: true,
             total,
-            usuarios
+            usuarios: fullAccess ? usuarios : usuarios.map(toPublicUsuario)
         });
 
     } catch (error) {
@@ -173,6 +225,14 @@ const obtenerUsuarios = async (req = require, res = response) => {
             error: error.message // Mejor solo enviar el mensaje de error
         });
     }
+};
+
+const obtenerJugadoresPublicos = async (req = require, res = response) => {
+    req.query = {
+        ...req.query,
+        rol: 'USER_ROL',
+    };
+    return obtenerUsuarios(req, res);
 };
 
 const obtenerMiUsuario = async (req = require, res = response) => {
@@ -216,9 +276,23 @@ const obtenerUsuario = async (req = require, res = response) => {
 
         const usuario = await Usuarios.findById(id).populate('equipo_id')
 
+        if (!usuario || !usuario.estado) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            })
+        }
+
+        if (!canReadFullUsuario(req, usuario) && usuario.rol !== 'USER_ROL') {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado'
+            })
+        }
+
         return res.status(200).json({
             ok: true,
-            usuario
+            usuario: canReadFullUsuario(req, usuario) ? usuario : toPublicUsuario(usuario)
         })
 
     } catch (error) {
@@ -371,6 +445,11 @@ const eliminarUsuario = async (req = require, res = response) => {
     }
 
 
+}
+
+const obtenerJugadorPublico = async (req = require, res = response) => {
+    req.usuarioAuth = null;
+    return obtenerUsuario(req, res);
 }
 
 const actualizarMiUsuario = async (req = require, res = response) => {
@@ -907,8 +986,10 @@ const obtenerAuditoriaRoles = async (req = require, res = response) => {
 module.exports = {
     guardarUsuario,
     obtenerUsuarios,
+    obtenerJugadoresPublicos,
     obtenerMiUsuario,
     obtenerUsuario,
+    obtenerJugadorPublico,
     actualizarUsuario,
     actualizarMiUsuario,
     actualizarFotoPerfilUsuario,

@@ -218,7 +218,7 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
 
 const guardarReserva = async (req = request, res = response) => {
     try {
-        const data = req.body;
+        const data = { ...req.body };
         const usuarioAuth = req.usuarioAuth;
 
         if (!data.fecha || !data.horaInicio || !data.horaFin) {
@@ -268,6 +268,10 @@ const guardarReserva = async (req = request, res = response) => {
                 ok: false,
                 error: 'Ya existe una reserva en ese rango horario para esta cancha'
             });
+        }
+
+        if (!data.usuario && usuarioAuth?.rol === 'USER_ROL') {
+            data.usuario = String(usuarioAuth._id);
         }
 
         if (data.usuario) {
@@ -476,14 +480,14 @@ const actualizarReserva = async (req = request, res = response) => {
             }
         }
 
-        const reservas = await Reservas.findByIdAndUpdate(id, { ...req.body }, { new: true })
+        const reserva = await Reservas.findByIdAndUpdate(id, { ...req.body }, { new: true })
             .populate('usuario')
             .populate('complejo')
             .populate('cancha')
             .populate('deporte');
 
         if (nextState === 'confirmada') {
-            const reservaDate = new Date(reservas.fecha);
+            const reservaDate = new Date(reserva.fecha);
             const startOfDay = new Date(
                 reservaDate.getFullYear(),
                 reservaDate.getMonth(),
@@ -495,8 +499,8 @@ const actualizarReserva = async (req = request, res = response) => {
                 reservaDate.getDate() + 1,
             );
             const pendientesSolapadas = await Reservas.find({
-                _id: { $ne: reservas._id },
-                cancha: reservas.cancha?._id || reservas.cancha,
+                _id: { $ne: reserva._id },
+                cancha: reserva.cancha?._id || reserva.cancha,
                 fecha: {
                     $gte: startOfDay,
                     $lt: endOfDay,
@@ -508,8 +512,8 @@ const actualizarReserva = async (req = request, res = response) => {
 
             for (const item of pendientesSolapadas) {
                 const overlap = hasTimeConflict({
-                    startA: parseHourToMinutes(reservas.horaInicio),
-                    endA: parseHourToMinutes(reservas.horaFin),
+                    startA: parseHourToMinutes(reserva.horaInicio),
+                    endA: parseHourToMinutes(reserva.horaFin),
                     startB: parseHourToMinutes(item.horaInicio),
                     endB: parseHourToMinutes(item.horaFin),
                 });
@@ -529,11 +533,11 @@ const actualizarReserva = async (req = request, res = response) => {
                     req,
                     action: 'REJECT_OVERLAPPING_RESERVAS',
                     resourceType: 'reserva',
-                    resourceId: reservas._id,
-                    targetUsuario: reservas.usuario?._id || reservas.usuario || null,
+                    resourceId: reserva._id,
+                    targetUsuario: reserva.usuario?._id || reserva.usuario || null,
                     summary: `Se rechazaron ${rejectedIds.length} solicitud(es) solapadas`,
                     metadata: {
-                        reservaConfirmada: reservas._id,
+                        reservaConfirmada: reserva._id,
                         rechazadas: rejectedIds,
                         motivo: RESERVA_RECHAZADA_POR_OCUPACION,
                     },
@@ -545,18 +549,18 @@ const actualizarReserva = async (req = request, res = response) => {
             req,
             action: 'UPDATE_RESERVA',
             resourceType: 'reserva',
-            resourceId: reservas._id,
-            targetUsuario: reservas.usuario?._id || reservas.usuario || null,
+            resourceId: reserva._id,
+            targetUsuario: reserva.usuario?._id || reserva.usuario || null,
             summary: 'Reserva actualizada por superadmin',
             metadata: {
                 camposActualizados: Object.keys(req.body || {}),
-                estado: reservas.estado,
+                estado: reserva.estado,
             },
         });
 
         return res.status(200).json({
             ok: true,
-            reservas
+            reserva
         });
     } catch (error) {
         return res.status(500).json({
@@ -665,6 +669,34 @@ const obtenerReservas = async (req = request, res = response) => {
     if (estado) query.estado = estado;
 
     try {
+        if (req.usuarioAuth?.rol === 'ADMIN_ROL') {
+            const complejosAdministrados = await Complejos.find({
+                $or: [
+                    { administrador: req.usuarioAuth._id },
+                    { administradores: req.usuarioAuth._id },
+                ],
+            }).select('_id');
+
+            const complejoIds = complejosAdministrados.map((item) => item._id);
+
+            if (complejoIds.length === 0) {
+                return res.status(200).json({
+                    ok: true,
+                    total: 0,
+                    reservas: [],
+                });
+            }
+
+            if (query.complejo && !complejoIds.some((id) => String(id) === String(query.complejo))) {
+                return res.status(403).json({
+                    ok: false,
+                    error: 'No puedes consultar reservas de un complejo que no administras',
+                });
+            }
+
+            query.complejo = query.complejo || { $in: complejoIds };
+        }
+
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
             Reservas.find(query)
