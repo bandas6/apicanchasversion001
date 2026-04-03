@@ -8,6 +8,7 @@ const normalizePayload = (body = {}) => ({
     ctaLabel: String(body.ctaLabel || '').trim(),
     ctaTarget: String(body.ctaTarget || 'NONE').trim().toUpperCase(),
     scope: String(body.scope || 'GLOBAL').trim().toUpperCase(),
+    audiencia: String(body.audiencia || 'ALL').trim().toUpperCase(),
     complejo: body.complejo || null,
     complejoNombre: String(body.complejoNombre || '').trim(),
     activo: body.activo !== false,
@@ -18,6 +19,7 @@ const normalizePayload = (body = {}) => ({
 });
 
 const isGeneralAdmin = (usuarioAuth) => usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+const AUDIENCIAS_VALIDAS = ['ALL', 'AUTHENTICATED', 'USER_ROL', 'ADMIN_ROL', 'ADMIN_GENERAL_ROL'];
 
 const managedComplejosByUser = async (usuarioId) => {
     const complejos = await Complejo.find({
@@ -84,6 +86,10 @@ const validarPayloadPista = (data = {}) => {
         return 'El scope de la pista no es valido';
     }
 
+    if (!AUDIENCIAS_VALIDAS.includes(data.audiencia)) {
+        return 'La audiencia configurada no es valida';
+    }
+
     if (!['NONE', 'COMPLEJOS', 'RESERVAS', 'COMPLEJO'].includes(data.ctaTarget)) {
         return 'El CTA configurado no es valido';
     }
@@ -128,8 +134,14 @@ const validarPayloadPista = (data = {}) => {
 const obtenerPistasPublicas = async (req = request, res = response) => {
     try {
         const ahora = new Date();
+        const audienciaPermitida = ['ALL'];
+        if (req.usuarioAuth?.rol) {
+            audienciaPermitida.push('AUTHENTICATED', String(req.usuarioAuth.rol).trim().toUpperCase());
+        }
+
         const pistas = await PistaHome.find({
             activo: true,
+            audiencia: { $in: audienciaPermitida },
             $or: [
                 { scope: 'GLOBAL' },
                 {
@@ -171,7 +183,7 @@ const obtenerPistasPublicas = async (req = request, res = response) => {
 
 const obtenerPistasAdmin = async (req = request, res = response) => {
     try {
-        const { scope, estadoRevision, complejo } = req.query;
+        const { scope, estadoRevision, complejo, audiencia } = req.query;
         const query = {};
 
         if (isGeneralAdmin(req.usuarioAuth)) {
@@ -183,6 +195,9 @@ const obtenerPistasAdmin = async (req = request, res = response) => {
             }
             if (complejo) {
                 query.complejo = complejo;
+            }
+            if (audiencia) {
+                query.audiencia = String(audiencia).trim().toUpperCase();
             }
         } else {
             const complejos = await managedComplejosByUser(req.usuarioAuth._id);
@@ -249,6 +264,10 @@ const crearPistaHome = async (req = request, res = response) => {
             data.complejoNombre = '';
         }
 
+        if (!isGeneralAdmin(req.usuarioAuth)) {
+            data.audiencia = 'ALL';
+        }
+
         const developerOwned = isGeneralAdmin(req.usuarioAuth);
         if (data.scope === 'COMPLEJO') {
             data.ctaTarget = 'COMPLEJO';
@@ -311,6 +330,7 @@ const actualizarPistaHome = async (req = request, res = response) => {
             pista.iconoKey = data.iconoKey;
             pista.ctaLabel = data.ctaLabel;
             pista.ctaTarget = data.ctaTarget;
+            pista.audiencia = data.audiencia;
             pista.orden = data.orden;
             pista.activo = data.activo;
             pista.fechaInicio = data.fechaInicio;

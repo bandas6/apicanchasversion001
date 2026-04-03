@@ -26,6 +26,11 @@ const PistasHomeSchema = new Schema({
         enum: ['GLOBAL', 'COMPLEJO'],
         default: 'GLOBAL',
     },
+    audiencia: {
+        type: String,
+        enum: ['ALL', 'AUTHENTICATED', 'USER_ROL', 'ADMIN_ROL', 'ADMIN_GENERAL_ROL'],
+        default: 'ALL',
+    },
     complejo: {
         type: Schema.Types.ObjectId,
         ref: 'Complejo',
