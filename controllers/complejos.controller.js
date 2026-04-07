@@ -4,6 +4,7 @@ const Canchas = require("../models/canchas");
 const Reservas = require("../models/reservas");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const { uploadBufferToCloudinary } = require("../helpers/cloudinary");
+const { ensurePointWithinActiveCoverage } = require('../helpers/coberturas-geograficas');
 require("../models/deportes");
 
 const normalizarPayloadComplejo = (data = {}) => {
@@ -312,6 +313,11 @@ const guardarComplejo = async (req = request, res = response) => {
             portadaUrl ? [portadaUrl] : [],
             data.imagenes || [],
         );
+        const lat = data.ubicacionGeo?.lat;
+        const lng = data.ubicacionGeo?.lng;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            await ensurePointWithinActiveCoverage({ lat, lng });
+        }
         const complejo = new Complejos(data);
 
         await complejo.save();
@@ -381,6 +387,11 @@ const actualizarComplejo = async (req = request, res = response) => {
             data.img ? [data.img] : [],
             data.imagenes,
         );
+        const lat = data.ubicacionGeo?.lat;
+        const lng = data.ubicacionGeo?.lng;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            await ensurePointWithinActiveCoverage({ lat, lng });
+        }
 
         const complejo = await Complejos.findByIdAndUpdate(id, data, { new: true })
             .populate('administrador')

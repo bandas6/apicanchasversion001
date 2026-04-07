@@ -29,6 +29,7 @@ class Server {
             reservas: '/api/reservas',
             historialReservas: '/api/historial-reservas',
             mensajes: '/api/mensajes',
+            coberturasGeograficas: '/api/coberturas-geograficas',
         }
        
         
@@ -75,6 +76,7 @@ class Server {
         this.app.use(this.paths.reservas, require('../routes/reservas'));
         this.app.use(this.paths.historialReservas, require('../routes/historial-reserva'));
         this.app.use(this.paths.mensajes, require('../routes/mensajes'));
+        this.app.use(this.paths.coberturasGeograficas, require('../routes/coberturas-geograficas'));
     }
 
     async listen() {
