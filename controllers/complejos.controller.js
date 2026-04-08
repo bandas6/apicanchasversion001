@@ -2,6 +2,7 @@ const { request, response } = require("express");
 const Complejos = require("../models/complejos");
 const Canchas = require("../models/canchas");
 const Reservas = require("../models/reservas");
+const { ComplexReview } = require("../models/complex-reviews");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const { uploadBufferToCloudinary } = require("../helpers/cloudinary");
 const { ensurePointWithinActiveCoverage } = require('../helpers/coberturas-geograficas');
@@ -517,10 +518,46 @@ const obtenerCanchasPorComplejo = async (req = request, res = response) => {
     }
 };
 
+const obtenerReviewsComplejo = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const { limit = 20, desde = 0 } = req.query;
+
+        const complejo = await Complejos.findById(id).select('_id');
+        if (!complejo) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Complejo no encontrado',
+            });
+        }
+
+        const [total, reviews] = await Promise.all([
+            ComplexReview.countDocuments({ complejoId: id }),
+            ComplexReview.find({ complejoId: id })
+                .populate('userId', 'nombre apellido fotoUrl nombre_archivo_imagen')
+                .sort({ updatedAt: -1, createdAt: -1 })
+                .skip(Number(desde))
+                .limit(Number(limit)),
+        ]);
+
+        return res.status(200).json({
+            ok: true,
+            total,
+            reviews,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     guardarComplejo,
     obtenerComplejos,
     obtenerComplejo,
     obtenerCanchasPorComplejo,
-    actualizarComplejo
+    actualizarComplejo,
+    obtenerReviewsComplejo,
 }

@@ -13,7 +13,8 @@ const {
     actualizarRolGeneralUsuario,
     actualizarDocumentosIdentidadUsuario,
     actualizarVerificacionIdentidadUsuario,
-    obtenerAuditoriaRoles
+    obtenerAuditoriaRoles,
+    obtenerResumenReputacionUsuario,
 } = require("../controllers/usuarios.controller");
 const {
     usuarioExiste,
@@ -50,6 +51,12 @@ router.get('/:id', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos
 ], obtenerUsuario);
+
+router.get('/:id/reputation-summary', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos
+], obtenerResumenReputacionUsuario);
 
 router.post('/', [
     check('correo', 'el correo no es valido').isEmail(),

@@ -63,8 +63,65 @@ const ReservasSchema = new Schema({
     },
     estado: {
         type: String,
-        enum: ['pendiente', 'confirmada', 'rechazada', 'cancelada', 'expirada', 'completada'],
+        enum: [
+            'pendiente',
+            'confirmada',
+            'rechazada',
+            'cancelada',
+            'expirada',
+            'pendiente_cierre',
+            'completada',
+            'no_show_usuario',
+            'cancelada_tardia_usuario',
+            'cancelada_por_complejo',
+            'incidencia',
+        ],
         default: 'pendiente',
+    },
+    closedAt: {
+        type: Date,
+        default: null,
+    },
+    closedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'Usuario',
+        default: null,
+    },
+    closureReason: {
+        type: String,
+        enum: [
+            'completada',
+            'no_show_usuario',
+            'cancelada_tardia_usuario',
+            'cancelada_por_complejo',
+            'incidencia',
+        ],
+        default: null,
+    },
+    closureNotes: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    reviewWindowEndsAt: {
+        type: Date,
+        default: null,
+    },
+    userCanReviewComplex: {
+        type: Boolean,
+        default: false,
+    },
+    complexCanEvaluateUser: {
+        type: Boolean,
+        default: false,
+    },
+    userReviewedComplexAt: {
+        type: Date,
+        default: null,
+    },
+    complexEvaluatedUserAt: {
+        type: Date,
+        default: null,
     },
     observaciones: {
         type: String,

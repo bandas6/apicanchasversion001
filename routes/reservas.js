@@ -11,6 +11,10 @@ const {
     obtenerDisponibilidadCancha,
     obtenerMisReservas,
     cancelarMiReserva,
+    cerrarReserva,
+    crearReviewComplejo,
+    editarReviewComplejo,
+    evaluarUsuarioReserva,
 } = require("../controllers/reservas.controller");
 const {
     esAdminRol,
@@ -73,5 +77,31 @@ router.patch('/:id/cancelar', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], cancelarMiReserva);
+
+router.post('/:id/cerrar', [
+    validarJWT,
+    puedeGestionarReserva,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], cerrarReserva);
+
+router.post('/:id/review-complejo', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], crearReviewComplejo);
+
+router.patch('/:id/review-complejo', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], editarReviewComplejo);
+
+router.post('/:id/evaluacion-usuario', [
+    validarJWT,
+    puedeGestionarReserva,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], evaluarUsuarioReserva);
 
 module.exports = router;

@@ -32,6 +32,37 @@ const UsuarioSchema = new Schema({
         type: Number,
         default: 0
     },
+    reliabilityScore: {
+        type: Number,
+        min: 0,
+        max: 100,
+        default: 100,
+    },
+    attendanceCount: {
+        type: Number,
+        min: 0,
+        default: 0,
+    },
+    lateCount: {
+        type: Number,
+        min: 0,
+        default: 0,
+    },
+    noShowCount: {
+        type: Number,
+        min: 0,
+        default: 0,
+    },
+    lateCancelCount: {
+        type: Number,
+        min: 0,
+        default: 0,
+    },
+    reliabilityBadge: {
+        type: String,
+        enum: ['confiable', 'normal', 'con incidencias'],
+        default: 'confiable',
+    },
     bio: {
         type: String,
         trim: true,

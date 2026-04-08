@@ -3,9 +3,36 @@ const Reservas = require("../models/reservas");
 const Canchas = require("../models/canchas");
 const Complejos = require("../models/complejos");
 const Usuarios = require("../models/usuarios");
+const { ComplexReview, COMPLEX_REVIEW_TAGS } = require("../models/complex-reviews");
+const { USER_ATTENDANCE_VALUES, USER_BEHAVIOR_VALUES } = require("../models/user-reputation-events");
 const { ADMIN_ROLES, usuarioAdministraComplejo } = require("../middlewares/validar-roles");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
+const {
+    CLOSURE_STATES,
+    USER_REVIEW_ALLOWED_STATES,
+    USER_EVALUATION_ALLOWED_STATES,
+    syncReservationLifecycle,
+    syncReservationsForQuery,
+    closeReservation,
+    refreshReservationPermissions,
+    recalculateComplexRating,
+    recalculateUserReliability,
+    upsertUserEvaluationForReservation,
+    getReservationEndAt,
+} = require("../helpers/reservation-reputation");
 require("../models/deportes");
+
+const populateReservaQuery = (query) => {
+    if (!query) {
+        return query;
+    }
+
+    return query
+        .populate('usuario')
+        .populate('complejo')
+        .populate('cancha')
+        .populate('deporte');
+};
 
 const parseHourToMinutes = (value = '') => {
     const [hour = '0', minute = '0'] = String(value).split(':');
@@ -116,6 +143,31 @@ const expirePendingReservations = async (reservas = []) => {
     }
 
     return expiradas;
+};
+
+const normalizeReviewTags = (tags = []) => {
+    if (!Array.isArray(tags)) {
+        return [];
+    }
+
+    return [...new Set(
+        tags
+            .map((item) => String(item || '').trim())
+            .filter((item) => COMPLEX_REVIEW_TAGS.includes(item))
+    )];
+};
+
+const buildUserReputationSummaryPayload = (usuario = {}) => {
+    const reliabilityScore = Number(usuario.reliabilityScore || 100);
+    return {
+        userId: usuario._id || usuario.uid,
+        reliabilityScore,
+        attendanceCount: Number(usuario.attendanceCount || 0),
+        lateCount: Number(usuario.lateCount || 0),
+        noShowCount: Number(usuario.noShowCount || 0),
+        lateCancelCount: Number(usuario.lateCancelCount || 0),
+        reliabilityBadge: usuario.reliabilityBadge || 'confiable',
+    };
 };
 
 const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved = true }) => {
@@ -242,6 +294,14 @@ const guardarReserva = async (req = request, res = response) => {
         const startOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate());
         const endOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate() + 1);
 
+        await syncReservationsForQuery({
+            cancha: data.cancha,
+            fecha: {
+                $gte: startOfDay,
+                $lt: endOfDay,
+            },
+        });
+
         const reservasExistentes = await Reservas.find({
             cancha: data.cancha,
             fecha: {
@@ -359,6 +419,7 @@ const guardarReserva = async (req = request, res = response) => {
         });
 
         await reserva.save();
+        await refreshReservationPermissions(reserva);
 
         await auditAdminGeneralAction({
             req,
@@ -400,20 +461,16 @@ const actualizarReserva = async (req = request, res = response) => {
             });
         }
 
-        if (hasReservationExpired(reservaActual)) {
-            reservaActual.estado = 'expirada';
-            if (!String(reservaActual.observaciones || '').trim()) {
-                reservaActual.observaciones = RESERVA_EXPIRADA_POR_TIEMPO;
-            }
-            await reservaActual.save();
-
-            return res.status(409).json({
-                ok: false,
-                error: 'La solicitud ya expiro porque el horario solicitado ya paso sin confirmacion'
-            });
-        }
+        await syncReservationLifecycle(reservaActual);
 
         const nextState = String(req.body?.estado || reservaActual.estado || '').trim();
+
+        if (CLOSURE_STATES.includes(nextState)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Usa el endpoint de cierre operativo para aplicar este estado',
+            });
+        }
 
         if (nextState === 'confirmada') {
             const reservaDate = new Date(reservaActual.fecha);
@@ -481,10 +538,7 @@ const actualizarReserva = async (req = request, res = response) => {
         }
 
         const reserva = await Reservas.findByIdAndUpdate(id, { ...req.body }, { new: true })
-            .populate('usuario')
-            .populate('complejo')
-            .populate('cancha')
-            .populate('deporte');
+            .then((item) => populateReservaQuery(item));
 
         if (nextState === 'confirmada') {
             const reservaDate = new Date(reserva.fecha);
@@ -545,6 +599,8 @@ const actualizarReserva = async (req = request, res = response) => {
             }
         }
 
+        await refreshReservationPermissions(reserva);
+
         await auditAdminGeneralAction({
             req,
             action: 'UPDATE_RESERVA',
@@ -575,17 +631,13 @@ const obtenerReservasCancha = async (req = request, res = response) => {
     const query = { cancha: id };
 
     try {
+        await syncReservationsForQuery(query);
+
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
-            Reservas.find(query)
-                .populate('usuario')
-                .populate('complejo')
-                .populate('cancha')
-                .populate('deporte')
+            populateReservaQuery(Reservas.find(query))
                 .sort({ fecha: 1, horaInicio: 1 })
         ]);
-
-        await expirePendingReservations(reservas);
 
         return res.status(200).json({
             ok: true,
@@ -624,6 +676,14 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
 
         const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
         const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
+
+        await syncReservationsForQuery({
+            cancha: id,
+            fecha: {
+                $gte: startOfDay,
+                $lt: endOfDay,
+            },
+        });
 
         const reservas = await Reservas.find({
             cancha: id,
@@ -697,17 +757,13 @@ const obtenerReservas = async (req = request, res = response) => {
             query.complejo = query.complejo || { $in: complejoIds };
         }
 
+        await syncReservationsForQuery(query);
+
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
-            Reservas.find(query)
-                .populate('usuario')
-                .populate('complejo')
-                .populate('cancha')
-                .populate('deporte')
+            populateReservaQuery(Reservas.find(query))
                 .sort({ fecha: 1, horaInicio: 1 })
         ]);
-
-        await expirePendingReservations(reservas);
 
         return res.status(200).json({
             ok: true,
@@ -734,17 +790,13 @@ const obtenerMisReservas = async (req = request, res = response) => {
             query.estado = estado;
         }
 
+        await syncReservationsForQuery(query);
+
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
-            Reservas.find(query)
-                .populate('usuario')
-                .populate('complejo')
-                .populate('cancha')
-                .populate('deporte')
+            populateReservaQuery(Reservas.find(query))
                 .sort({ fecha: 1, horaInicio: 1 }),
         ]);
-
-        await expirePendingReservations(reservas);
 
         return res.status(200).json({
             ok: true,
@@ -777,18 +829,7 @@ const cancelarMiReserva = async (req = request, res = response) => {
             });
         }
 
-        if (hasReservationExpired(reserva)) {
-            reserva.estado = 'expirada';
-            if (!String(reserva.observaciones || '').trim()) {
-                reserva.observaciones = RESERVA_EXPIRADA_POR_TIEMPO;
-            }
-            await reserva.save();
-
-            return res.status(409).json({
-                ok: false,
-                error: 'La solicitud ya expiro porque el horario solicitado ya paso sin confirmacion'
-            });
-        }
+        await syncReservationLifecycle(reserva);
 
         if (String(reserva.usuario?._id || reserva.usuario || '') !== usuarioId) {
             return res.status(403).json({
@@ -804,10 +845,10 @@ const cancelarMiReserva = async (req = request, res = response) => {
             });
         }
 
-        if (reserva.estado === 'completada') {
+        if (['completada', 'pendiente_cierre', 'no_show_usuario', 'cancelada_tardia_usuario', 'cancelada_por_complejo', 'incidencia'].includes(reserva.estado)) {
             return res.status(400).json({
                 ok: false,
-                error: 'No puedes cancelar una reserva completada'
+                error: 'No puedes cancelar una reserva que ya esta en cierre operativo o cerrada'
             });
         }
 
@@ -832,10 +873,7 @@ const obtenerReserva = async (req = request, res = response) => {
 
     try {
         const reserva = await Reservas.findById(id)
-            .populate('usuario')
-            .populate('complejo')
-            .populate('cancha')
-            .populate('deporte');
+            .then((item) => populateReservaQuery(item));
 
         if (!reserva) {
             return res.status(404).json({
@@ -844,7 +882,8 @@ const obtenerReserva = async (req = request, res = response) => {
             });
         }
 
-        await expirePendingReservations([reserva]);
+        await syncReservationLifecycle(reserva);
+        await refreshReservationPermissions(reserva);
 
         return res.status(200).json({
             ok: true,
@@ -859,6 +898,284 @@ const obtenerReserva = async (req = request, res = response) => {
     }
 };
 
+const cerrarReserva = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const { closureReason, closureNotes, attendance, behavior, internalComment } = req.body || {};
+
+        if (!CLOSURE_STATES.includes(String(closureReason || '').trim())) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes indicar un motivo de cierre valido',
+            });
+        }
+
+        let reserva = await Reservas.findById(id);
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada',
+            });
+        }
+
+        await syncReservationLifecycle(reserva);
+        reserva = await Reservas.findById(id);
+
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada',
+            });
+        }
+
+        if (!['confirmada', 'pendiente_cierre'].includes(reserva.estado)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La reserva no esta disponible para cierre operativo',
+            });
+        }
+
+        const endAt = getReservationEndAt(reserva);
+        if (reserva.estado === 'confirmada' &&
+            endAt != null &&
+            endAt.getTime() > Date.now()) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La reserva todavia no termina su franja horaria y aun no puede cerrarse',
+            });
+        }
+
+        await closeReservation({
+            reserva,
+            closedBy: req.usuarioAuth?._id || null,
+            closureReason: String(closureReason).trim(),
+            closureNotes,
+            evaluation: {
+                attendance,
+                behavior,
+                internalComment,
+            },
+        });
+
+        const reservaActualizada = await Reservas.findById(id).then((item) => populateReservaQuery(item));
+
+        return res.status(200).json({
+            ok: true,
+            reserva: reservaActualizada,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const crearReviewComplejo = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const { rating, comentario, tags } = req.body || {};
+        const userId = req.usuarioAuth?._id;
+
+        let reserva = await Reservas.findById(id);
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada',
+            });
+        }
+
+        await syncReservationLifecycle(reserva);
+        await refreshReservationPermissions(reserva);
+        reserva = await Reservas.findById(id);
+
+        if (String(reserva.usuario || '') !== String(userId || '')) {
+            return res.status(403).json({
+                ok: false,
+                error: 'No puedes resenar una reserva que no te pertenece',
+            });
+        }
+
+        if (!USER_REVIEW_ALLOWED_STATES.includes(reserva.estado) || !reserva.userCanReviewComplex) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Esta reserva ya no permite resenar al complejo',
+            });
+        }
+
+        const numericRating = Number(rating || 0);
+        if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El rating debe estar entre 1 y 5',
+            });
+        }
+
+        const existing = await ComplexReview.findOne({ reservationId: reserva._id });
+        if (existing) {
+            return res.status(409).json({
+                ok: false,
+                error: 'Ya existe una resena asociada a esta reserva',
+            });
+        }
+
+        const review = await ComplexReview.create({
+            reservationId: reserva._id,
+            userId: reserva.usuario,
+            complejoId: reserva.complejo,
+            rating: numericRating,
+            comentario: String(comentario || '').trim(),
+            tags: normalizeReviewTags(tags),
+        });
+
+        await recalculateComplexRating(reserva.complejo);
+        reserva.userReviewedComplexAt = review.createdAt || new Date();
+        reserva.userCanReviewComplex = false;
+        await reserva.save();
+        await refreshReservationPermissions(reserva);
+
+        return res.status(201).json({
+            ok: true,
+            review,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const editarReviewComplejo = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const { rating, comentario, tags } = req.body || {};
+        const userId = req.usuarioAuth?._id;
+
+        const reserva = await Reservas.findById(id);
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada',
+            });
+        }
+
+        const review = await ComplexReview.findOne({ reservationId: reserva._id });
+        if (!review) {
+            return res.status(404).json({
+                ok: false,
+                error: 'La resena no existe para esta reserva',
+            });
+        }
+
+        if (String(review.userId || '') !== String(userId || '')) {
+            return res.status(403).json({
+                ok: false,
+                error: 'No puedes editar una resena que no te pertenece',
+            });
+        }
+
+        const reviewWindowEndsAt = reserva.reviewWindowEndsAt ? new Date(reserva.reviewWindowEndsAt) : null;
+        if (!reviewWindowEndsAt || reviewWindowEndsAt.getTime() <= Date.now()) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La ventana de edicion de la resena ya termino',
+            });
+        }
+
+        if (rating !== undefined) {
+            const numericRating = Number(rating || 0);
+            if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
+                return res.status(400).json({
+                    ok: false,
+                    error: 'El rating debe estar entre 1 y 5',
+                });
+            }
+            review.rating = numericRating;
+        }
+
+        if (comentario !== undefined) {
+            review.comentario = String(comentario || '').trim();
+        }
+
+        if (tags !== undefined) {
+            review.tags = normalizeReviewTags(tags);
+        }
+
+        await review.save();
+        await recalculateComplexRating(reserva.complejo);
+
+        return res.status(200).json({
+            ok: true,
+            review,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const evaluarUsuarioReserva = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const { attendance, behavior, internalComment } = req.body || {};
+
+        if (attendance !== undefined && !USER_ATTENDANCE_VALUES.includes(String(attendance).trim())) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El valor de asistencia no es valido',
+            });
+        }
+
+        if (behavior !== undefined && !USER_BEHAVIOR_VALUES.includes(String(behavior).trim())) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El valor de comportamiento no es valido',
+            });
+        }
+
+        let reserva = await Reservas.findById(id);
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada',
+            });
+        }
+
+        await syncReservationLifecycle(reserva);
+        reserva = await Reservas.findById(id);
+
+        if (!reserva || !USER_EVALUATION_ALLOWED_STATES.includes(reserva.estado)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Esta reserva no permite evaluacion operativa del usuario',
+            });
+        }
+
+        const event = await upsertUserEvaluationForReservation({
+            reserva,
+            attendance,
+            behavior,
+            internalComment,
+        });
+
+        const usuario = await Usuarios.findById(reserva.usuario);
+
+        return res.status(200).json({
+            ok: true,
+            event,
+            reputationSummary: buildUserReputationSummaryPayload(usuario || {}),
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     guardarReserva,
     obtenerReserva,
@@ -868,4 +1185,8 @@ module.exports = {
     obtenerReservas,
     obtenerMisReservas,
     cancelarMiReserva,
+    cerrarReserva,
+    crearReviewComplejo,
+    editarReviewComplejo,
+    evaluarUsuarioReserva,
 }

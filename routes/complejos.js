@@ -9,7 +9,8 @@ const {
     obtenerComplejo,
     obtenerComplejos,
     obtenerCanchasPorComplejo,
-    actualizarComplejo
+    actualizarComplejo,
+    obtenerReviewsComplejo,
 } = require("../controllers/complejos.controller");
 const { puedeGestionarComplejo } = require("../middlewares/validar-roles");
 
@@ -26,6 +27,11 @@ router.get('/:id',
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
     obtenerComplejo);
+
+router.get('/:id/reviews',
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+    obtenerReviewsComplejo);
 
 router.post('/', [
     validarJWT,

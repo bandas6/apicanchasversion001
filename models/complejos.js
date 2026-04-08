@@ -98,6 +98,13 @@ const ComplejosSchema = new Schema({
         min: 0,
         default: 0,
     },
+    ratingBreakdown: {
+        oneStar: { type: Number, min: 0, default: 0 },
+        twoStars: { type: Number, min: 0, default: 0 },
+        threeStars: { type: Number, min: 0, default: 0 },
+        fourStars: { type: Number, min: 0, default: 0 },
+        fiveStars: { type: Number, min: 0, default: 0 },
+    },
     maxReservasPorUsuarioPorDia: {
         type: Number,
         min: 1,

@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { dbConnection } = require('../database/config');
 const { ensureSystemRoles } = require('../helpers/ensure-system-roles');
+const { runReservationLifecycleSweep } = require('../helpers/reservation-reputation');
 
 
 class Server {
@@ -81,6 +82,11 @@ class Server {
 
     async listen() {
         await this.conectarDB();
+        setInterval(() => {
+            runReservationLifecycleSweep().catch((error) => {
+                console.error('[Reservas] Error en cierre automatico', error.message);
+            });
+        }, 10 * 60 * 1000);
         this.app.listen(this.port, () => {
             console.log(`Server is running on port ${this.port}`);
         });

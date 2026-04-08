@@ -4,6 +4,7 @@ const RoleChangeAudit = require("../models/role-change-audits");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const bcryptjs = require('bcryptjs');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
+const { recalculateUserReliability } = require('../helpers/reservation-reputation');
 const {
     CATALOGOS_PERFIL,
     normalizeCatalogValue,
@@ -450,6 +451,50 @@ const eliminarUsuario = async (req = require, res = response) => {
 const obtenerJugadorPublico = async (req = require, res = response) => {
     req.usuarioAuth = null;
     return obtenerUsuario(req, res);
+}
+
+const obtenerResumenReputacionUsuario = async (req = require, res = response) => {
+    try {
+        const { id } = req.params;
+        const currentUserId = String(req.usuarioAuth?._id || '');
+        const isGeneralAdmin = req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+        const isSameUser = currentUserId === String(id || '');
+
+        if (!isGeneralAdmin && !isSameUser) {
+            return res.status(403).json({
+                ok: false,
+                error: 'No puedes consultar el resumen de reputacion de otro usuario',
+            });
+        }
+
+        const usuario = await Usuarios.findById(id);
+        if (!usuario || !usuario.estado) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado',
+            });
+        }
+
+        const summary = await recalculateUserReliability(usuario._id);
+
+        return res.status(200).json({
+            ok: true,
+            summary: {
+                userId: usuario._id,
+                reliabilityScore: summary?.reliabilityScore ?? Number(usuario.reliabilityScore || 100),
+                attendanceCount: summary?.attendanceCount ?? Number(usuario.attendanceCount || 0),
+                lateCount: summary?.lateCount ?? Number(usuario.lateCount || 0),
+                noShowCount: summary?.noShowCount ?? Number(usuario.noShowCount || 0),
+                lateCancelCount: summary?.lateCancelCount ?? Number(usuario.lateCancelCount || 0),
+                reliabilityBadge: summary?.reliabilityBadge || usuario.reliabilityBadge || 'confiable',
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
 }
 
 const actualizarMiUsuario = async (req = require, res = response) => {
@@ -998,5 +1043,6 @@ module.exports = {
     actualizarRolGeneralUsuario,
     actualizarDocumentosIdentidadUsuario,
     actualizarVerificacionIdentidadUsuario,
-    obtenerAuditoriaRoles
+    obtenerAuditoriaRoles,
+    obtenerResumenReputacionUsuario,
 }
