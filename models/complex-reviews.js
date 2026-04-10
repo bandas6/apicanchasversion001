@@ -43,6 +43,40 @@ const ComplexReviewSchema = new Schema({
         type: String,
         enum: COMPLEX_REVIEW_TAGS,
     }],
+    moderationStatus: {
+        type: String,
+        enum: ['visible', 'reported', 'hidden'],
+        default: 'visible',
+        index: true,
+    },
+    reportReason: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    reportedAt: {
+        type: Date,
+        default: null,
+    },
+    reportedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'Usuario',
+        default: null,
+    },
+    moderationNotes: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    moderatedAt: {
+        type: Date,
+        default: null,
+    },
+    moderatedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'Usuario',
+        default: null,
+    },
 }, {
     timestamps: true,
     collection: 'complex_reviews',

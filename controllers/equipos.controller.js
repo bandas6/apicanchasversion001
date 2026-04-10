@@ -4,8 +4,16 @@ const { ADMIN_ROLES } = require("../middlewares/validar-roles");
 
 const obtenerEquipos = async (req = request, res = response) => {
     try {
-        const { limit = 0, desde = 0 } = req.query;
+        const { limit = 20, desde = 0, q } = req.query;
         const query = { estado: true };
+        const normalizedQuery = String(q || '').trim();
+
+        if (normalizedQuery) {
+            query.nombre = new RegExp(
+                normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i',
+            );
+        }
 
         const [total, equipos] = await Promise.all([
             Equipos.countDocuments(query),

@@ -131,6 +131,17 @@ const esReferenciaArchivoValida = (value = '') => {
 };
 
 const isGeneralAdmin = (req = {}) => req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+const buildSearchRegex = (value = '') => {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+        return null;
+    }
+
+    return new RegExp(
+        normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+        'i',
+    );
+};
 
 const canReadFullUsuario = (req = {}, usuario = null) => {
     if (!usuario) {
@@ -181,9 +192,10 @@ const toPublicUsuario = (usuario = null) => {
 
 const obtenerUsuarios = async (req = require, res = response) => {
     try {
-        const { limit = 0, desde = 0, rol, identidadVerificada, identidadEstado, destacados } = req.query;
+        const { limit = 20, desde = 0, rol, identidadVerificada, identidadEstado, destacados, q } = req.query;
         const query = { estado: true };
         const fullAccess = isGeneralAdmin(req);
+        const searchRegex = buildSearchRegex(q);
 
         if (rol && (fullAccess || rol === 'USER_ROL')) {
             query.rol = rol;
@@ -202,6 +214,15 @@ const obtenerUsuarios = async (req = require, res = response) => {
 
         if (fullAccess && identidadEstado) {
             query.identidadEstado = identidadEstado;
+        }
+
+        if (searchRegex) {
+            query.$or = [
+                { nombre: searchRegex },
+                { apellido: searchRegex },
+                { correo: searchRegex },
+                { ciudad: searchRegex },
+            ];
         }
 
         const [total, usuarios] = await Promise.all([
@@ -267,6 +288,189 @@ const obtenerMiUsuario = async (req = require, res = response) => {
         });
     }
 }
+
+const obtenerMisFavoritos = async (req = require, res = response) => {
+    try {
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id)
+            .populate('complejosFavoritos')
+            .populate('canchasFavoritas');
+
+        if (!usuario) {
+            return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+        }
+
+        return res.status(200).json({
+            ok: true,
+            complejos: usuario.complejosFavoritos || [],
+            canchas: usuario.canchasFavoritas || [],
+            filtrosGuardados: usuario.filtrosGuardados || [],
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+const toggleFavoritoUsuario = async (req = require, res = response) => {
+    try {
+        const { tipo, targetId } = req.body || {};
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+
+        if (!usuario) {
+            return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+        }
+
+        const target = String(targetId || '').trim();
+        if (!['complejo', 'cancha'].includes(String(tipo || '').trim()) || !target) {
+            return res.status(400).json({ ok: false, error: 'Debes enviar tipo valido y targetId' });
+        }
+
+        const field = tipo === 'complejo' ? 'complejosFavoritos' : 'canchasFavoritas';
+        const exists = (usuario[field] || []).some((item) => String(item) === target);
+        usuario[field] = exists
+            ? (usuario[field] || []).filter((item) => String(item) !== target)
+            : [...(usuario[field] || []), target];
+        await usuario.save();
+
+        return res.status(200).json({
+            ok: true,
+            tipo,
+            targetId: target,
+            isFavorite: !exists,
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+const guardarFiltroUsuario = async (req = require, res = response) => {
+    try {
+        const { nombre, scope = 'home', payload = {} } = req.body || {};
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+
+        if (!usuario) {
+            return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+        }
+
+        const safeName = String(nombre || '').trim();
+        if (!safeName) {
+            return res.status(400).json({ ok: false, error: 'Debes enviar un nombre para el filtro guardado' });
+        }
+
+        usuario.filtrosGuardados = [
+            {
+                nombre: safeName,
+                scope: String(scope || 'home').trim() || 'home',
+                payload: payload && typeof payload === 'object' ? payload : {},
+                createdAt: new Date(),
+            },
+            ...(Array.isArray(usuario.filtrosGuardados) ? usuario.filtrosGuardados : []),
+        ].slice(0, 20);
+
+        await usuario.save();
+
+        return res.status(201).json({
+            ok: true,
+            filtrosGuardados: usuario.filtrosGuardados,
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+const eliminarFiltroUsuario = async (req = require, res = response) => {
+    try {
+        const { filterId } = req.params;
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+
+        if (!usuario) {
+            return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+        }
+
+        usuario.filtrosGuardados = (usuario.filtrosGuardados || []).filter(
+            (item) => String(item?._id || '') !== String(filterId || ''),
+        );
+        await usuario.save();
+
+        return res.status(200).json({
+            ok: true,
+            filtrosGuardados: usuario.filtrosGuardados,
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+const registrarPushTokenUsuario = async (req = require, res = response) => {
+    try {
+        const { token, platform = '' } = req.body || {};
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+        const normalizedToken = String(token || '').trim();
+
+        if (!usuario) {
+            return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+        }
+
+        if (!normalizedToken) {
+            return res.status(400).json({ ok: false, error: 'Debes enviar un token de dispositivo' });
+        }
+
+        const existing = (usuario.devicePushTokens || []).find(
+            (item) => String(item?.token || '') === normalizedToken,
+        );
+
+        if (existing) {
+            existing.platform = String(platform || '').trim();
+            existing.updatedAt = new Date();
+        } else {
+            usuario.devicePushTokens = [
+                ...(usuario.devicePushTokens || []),
+                {
+                    token: normalizedToken,
+                    platform: String(platform || '').trim(),
+                    updatedAt: new Date(),
+                },
+            ];
+        }
+
+        await usuario.save();
+
+        return res.status(200).json({
+            ok: true,
+            total: (usuario.devicePushTokens || []).length,
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+const eliminarPushTokenUsuario = async (req = require, res = response) => {
+    try {
+        const { token } = req.body || {};
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+        const normalizedToken = String(token || '').trim();
+
+        if (!usuario) {
+            return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+        }
+
+        if (!normalizedToken) {
+            return res.status(400).json({ ok: false, error: 'Debes enviar un token de dispositivo' });
+        }
+
+        usuario.devicePushTokens = (usuario.devicePushTokens || []).filter(
+            (item) => String(item?.token || '') !== normalizedToken,
+        );
+
+        await usuario.save();
+
+        return res.status(200).json({
+            ok: true,
+            total: (usuario.devicePushTokens || []).length,
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
 
 // Obtener usuario por id
 const obtenerUsuario = async (req = require, res = response) => {
@@ -1045,4 +1249,10 @@ module.exports = {
     actualizarVerificacionIdentidadUsuario,
     obtenerAuditoriaRoles,
     obtenerResumenReputacionUsuario,
+    obtenerMisFavoritos,
+    toggleFavoritoUsuario,
+    guardarFiltroUsuario,
+    eliminarFiltroUsuario,
+    registrarPushTokenUsuario,
+    eliminarPushTokenUsuario,
 }

@@ -12,9 +12,13 @@ const {
     obtenerMisReservas,
     cancelarMiReserva,
     cerrarReserva,
+    obtenerReviewComplejoReserva,
     crearReviewComplejo,
     editarReviewComplejo,
     evaluarUsuarioReserva,
+    repetirReserva,
+    crearWaitlistReserva,
+    obtenerMiWaitlist,
 } = require("../controllers/reservas.controller");
 const {
     esAdminRol,
@@ -27,6 +31,11 @@ router.get('/mias', [
     validarJWT,
     validarCampos,
 ], obtenerMisReservas);
+
+router.get('/waitlist/mias', [
+    validarJWT,
+    validarCampos,
+], obtenerMiWaitlist);
 
 router.get('/', [
     validarJWT,
@@ -65,6 +74,13 @@ router.post('/', [
     validarCampos
 ], guardarReserva);
 
+router.post('/waitlist', [
+    validarJWT,
+    check('complejo', 'No es un id valido').isMongoId(),
+    check('cancha', 'No es un id valido').isMongoId(),
+    validarCampos,
+], crearWaitlistReserva);
+
 router.put('/:id', [
     validarJWT,
     puedeGestionarReserva,
@@ -78,12 +94,24 @@ router.patch('/:id/cancelar', [
     validarCampos,
 ], cancelarMiReserva);
 
+router.post('/:id/repetir', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], repetirReserva);
+
 router.post('/:id/cerrar', [
     validarJWT,
     puedeGestionarReserva,
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], cerrarReserva);
+
+router.get('/:id/review-complejo', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], obtenerReviewComplejoReserva);
 
 router.post('/:id/review-complejo', [
     validarJWT,

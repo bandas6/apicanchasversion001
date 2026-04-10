@@ -35,6 +35,8 @@ const EquiposSchema = new Schema({
     },
 });
 
+EquiposSchema.index({ estado: 1, nombre: 1 });
+
 
 EquiposSchema.methods.toJSON = function () {
     const { __v, _id , ...equipo } = this.toObject();

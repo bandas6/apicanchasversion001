@@ -93,10 +93,37 @@ const ComplejosSchema = new Schema({
         max: 5,
         default: null,
     },
+    ratingAverage: {
+        type: Number,
+        min: 0,
+        max: 5,
+        default: null,
+    },
+    ratingAverageDisplay: {
+        type: Number,
+        min: 0,
+        max: 5,
+        default: null,
+    },
     totalResenas: {
         type: Number,
         min: 0,
         default: 0,
+    },
+    reviewsCount: {
+        type: Number,
+        min: 0,
+        default: 0,
+    },
+    ratingStatus: {
+        type: String,
+        enum: ['new', 'building', 'established'],
+        default: 'new',
+    },
+    ratingSummaryLabel: {
+        type: String,
+        trim: true,
+        default: 'Nuevo',
     },
     ratingBreakdown: {
         oneStar: { type: Number, min: 0, default: 0 },
@@ -115,6 +142,10 @@ const ComplejosSchema = new Schema({
         default: true,
     },
 });
+
+ComplejosSchema.index({ estado: 1 });
+ComplejosSchema.index({ estado: 1, administrador: 1 });
+ComplejosSchema.index({ estado: 1, administradores: 1 });
 
 ComplejosSchema.methods.toJSON = function () {
     const { __v, _id, ...complejo } = this.toObject();

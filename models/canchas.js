@@ -166,6 +166,9 @@ const CanchasSchema = new Schema({
     }]
 });
 
+CanchasSchema.index({ complejo: 1, eliminado: 1 });
+CanchasSchema.index({ complejo: 1, activa: 1, enMantenimiento: 1 });
+
 CanchasSchema.methods.toJSON = function () {
     const { __v, _id, ...cancha } = this.toObject();
     cancha.uid = _id;

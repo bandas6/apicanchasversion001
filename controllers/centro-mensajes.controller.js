@@ -69,6 +69,21 @@ const normalizePayload = (body = {}) => ({
     observacionesRevision: normalizeText(body.observacionesRevision),
 });
 
+const normalizeCrossFieldRules = (data = {}) => {
+    if (data.scope !== 'COMPLEJO') {
+        data.complejo = null;
+        data.complejoNombre = '';
+        if (data.ctaTarget === 'COMPLEJO') {
+            data.ctaTarget = 'NONE';
+            data.ctaLabel = '';
+            data.ctaUrl = '';
+            data.ctaTargetId = '';
+        }
+    }
+
+    return data;
+};
+
 const managedComplejosByUser = async (usuarioId) => {
     const complejos = await Complejo.find({
         $or: [
@@ -372,7 +387,7 @@ const obtenerMensajesPendientes = async (req = request, res = response) => {
 
 const crearMensajeCentro = async (req = request, res = response) => {
     try {
-        const data = normalizePayload(req.body);
+        const data = normalizeCrossFieldRules(normalizePayload(req.body));
         const validationError = validarPayloadMensaje(data, {
             isGeneralAdminUser: isGeneralAdmin(req.usuarioAuth),
         });
@@ -456,7 +471,7 @@ const actualizarMensajeCentro = async (req = request, res = response) => {
             });
         }
 
-        const data = normalizePayload(req.body);
+        const data = normalizeCrossFieldRules(normalizePayload(req.body));
         const developerOwned = isGeneralAdmin(req.usuarioAuth);
         const validationError = validarPayloadMensaje(data, {
             isGeneralAdminUser: developerOwned,
@@ -488,6 +503,12 @@ const actualizarMensajeCentro = async (req = request, res = response) => {
         } else {
             data.complejo = null;
             data.complejoNombre = '';
+            if (data.ctaTarget === 'COMPLEJO') {
+                data.ctaTarget = 'NONE';
+                data.ctaLabel = '';
+                data.ctaUrl = '';
+                data.ctaTargetId = '';
+            }
         }
 
         mensaje.tipo = data.tipo;

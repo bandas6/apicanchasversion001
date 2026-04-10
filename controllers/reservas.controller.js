@@ -4,6 +4,7 @@ const Canchas = require("../models/canchas");
 const Complejos = require("../models/complejos");
 const Usuarios = require("../models/usuarios");
 const { ComplexReview, COMPLEX_REVIEW_TAGS } = require("../models/complex-reviews");
+const ReservationWaitlist = require("../models/reservation-waitlists");
 const { USER_ATTENDANCE_VALUES, USER_BEHAVIOR_VALUES } = require("../models/user-reputation-events");
 const { ADMIN_ROLES, usuarioAdministraComplejo } = require("../middlewares/validar-roles");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
@@ -155,6 +156,110 @@ const normalizeReviewTags = (tags = []) => {
             .map((item) => String(item || '').trim())
             .filter((item) => COMPLEX_REVIEW_TAGS.includes(item))
     )];
+};
+
+const buildComplexReviewPayload = (review = null, reserva = null) => {
+    if (!review) {
+        return null;
+    }
+
+    const reviewWindowEndsAt = reserva?.reviewWindowEndsAt
+        ? new Date(reserva.reviewWindowEndsAt)
+        : null;
+    const canEdit = Boolean(
+        reviewWindowEndsAt &&
+        reviewWindowEndsAt.getTime() > Date.now(),
+    );
+
+    return {
+        ...review.toJSON(),
+        reviewWindowEndsAt,
+        canEdit,
+    };
+};
+
+const buildReservationReviewSummary = (review = null, reserva = null) => {
+    if (!review) {
+        return null;
+    }
+
+    const basePayload = buildComplexReviewPayload(review, reserva);
+    if (!basePayload) {
+        return null;
+    }
+
+    return {
+        rating: Number(basePayload.rating || 0),
+        comentario: String(basePayload.comentario || '').trim(),
+        tags: Array.isArray(basePayload.tags) ? basePayload.tags : [],
+        createdAt: basePayload.createdAt || null,
+        updatedAt: basePayload.updatedAt || null,
+        canEdit: basePayload.canEdit === true,
+        reviewWindowEndsAt: basePayload.reviewWindowEndsAt || null,
+    };
+};
+
+const attachUserReviewSummaryToReserva = async ({
+    reserva,
+    userId = null,
+}) => {
+    if (!reserva || !userId) {
+        return reserva;
+    }
+
+    const review = await ComplexReview.findOne({
+        reservationId: reserva._id || reserva.uid,
+        userId,
+    });
+
+    if (!review) {
+        return reserva;
+    }
+
+    const plain = typeof reserva.toJSON === 'function'
+        ? reserva.toJSON()
+        : { ...reserva };
+    plain.userReviewSummary = buildReservationReviewSummary(review, reserva);
+    return plain;
+};
+
+const attachUserReviewSummariesToReservas = async ({
+    reservas = [],
+    userId = null,
+}) => {
+    if (!Array.isArray(reservas) || reservas.length === 0 || !userId) {
+        return reservas;
+    }
+
+    const reservationIds = reservas
+        .map((item) => item?._id || item?.uid)
+        .filter(Boolean);
+
+    if (reservationIds.length === 0) {
+        return reservas;
+    }
+
+    const reviews = await ComplexReview.find({
+        reservationId: { $in: reservationIds },
+        userId,
+    });
+    const reviewByReservationId = new Map(
+        reviews.map((item) => [String(item.reservationId || ''), item]),
+    );
+
+    return reservas.map((item) => {
+        const reservationId = String(item?._id || item?.uid || '');
+        const review = reviewByReservationId.get(reservationId);
+        if (!review) {
+            return item;
+        }
+
+        const plain = typeof item.toJSON === 'function'
+            ? item.toJSON()
+            : { ...item };
+        plain.userReviewSummary = buildReservationReviewSummary(review, item);
+        return plain;
+    });
 };
 
 const buildUserReputationSummaryPayload = (usuario = {}) => {
@@ -797,11 +902,15 @@ const obtenerMisReservas = async (req = request, res = response) => {
             populateReservaQuery(Reservas.find(query))
                 .sort({ fecha: 1, horaInicio: 1 }),
         ]);
+        const reservasConReview = await attachUserReviewSummariesToReservas({
+            reservas,
+            userId: usuarioId,
+        });
 
         return res.status(200).json({
             ok: true,
             total,
-            reservas,
+            reservas: reservasConReview,
         });
     } catch (error) {
         return res.status(500).json({
@@ -872,7 +981,7 @@ const obtenerReserva = async (req = request, res = response) => {
     const { id } = req.params;
 
     try {
-        const reserva = await Reservas.findById(id)
+        let reserva = await Reservas.findById(id)
             .then((item) => populateReservaQuery(item));
 
         if (!reserva) {
@@ -884,6 +993,10 @@ const obtenerReserva = async (req = request, res = response) => {
 
         await syncReservationLifecycle(reserva);
         await refreshReservationPermissions(reserva);
+        reserva = await attachUserReviewSummaryToReserva({
+            reserva,
+            userId: req.usuarioAuth?._id || null,
+        });
 
         return res.status(200).json({
             ok: true,
@@ -1034,9 +1147,51 @@ const crearReviewComplejo = async (req = request, res = response) => {
         await reserva.save();
         await refreshReservationPermissions(reserva);
 
+        let reservaActualizada = await Reservas.findById(id).then((item) => populateReservaQuery(item));
+        reservaActualizada = await attachUserReviewSummaryToReserva({
+            reserva: reservaActualizada,
+            userId,
+        });
+
         return res.status(201).json({
             ok: true,
-            review,
+            review: buildComplexReviewPayload(review, reserva),
+            reserva: reservaActualizada,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const obtenerReviewComplejoReserva = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const userId = req.usuarioAuth?._id;
+
+        const reserva = await Reservas.findById(id);
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada',
+            });
+        }
+
+        if (String(reserva.usuario || '') !== String(userId || '')) {
+            return res.status(403).json({
+                ok: false,
+                error: 'No puedes consultar una resena que no te pertenece',
+            });
+        }
+
+        const review = await ComplexReview.findOne({ reservationId: reserva._id })
+            .populate('userId', 'nombre apellido fotoUrl nombre_archivo_imagen');
+
+        return res.status(200).json({
+            ok: true,
+            review: buildComplexReviewPayload(review, reserva),
         });
     } catch (error) {
         return res.status(500).json({
@@ -1105,9 +1260,16 @@ const editarReviewComplejo = async (req = request, res = response) => {
         await review.save();
         await recalculateComplexRating(reserva.complejo);
 
+        let reservaActualizada = await Reservas.findById(id).then((item) => populateReservaQuery(item));
+        reservaActualizada = await attachUserReviewSummaryToReserva({
+            reserva: reservaActualizada,
+            userId,
+        });
+
         return res.status(200).json({
             ok: true,
-            review,
+            review: buildComplexReviewPayload(review, reserva),
+            reserva: reservaActualizada,
         });
     } catch (error) {
         return res.status(500).json({
@@ -1176,6 +1338,105 @@ const evaluarUsuarioReserva = async (req = request, res = response) => {
     }
 };
 
+const repetirReserva = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const reservaBase = await Reservas.findById(id);
+
+        if (!reservaBase) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada',
+            });
+        }
+
+        if (String(reservaBase.usuario || '') !== String(req.usuarioAuth?._id || '')) {
+            return res.status(403).json({
+                ok: false,
+                error: 'No puedes repetir una reserva que no te pertenece',
+            });
+        }
+
+        req.body = {
+            complejo: reservaBase.complejo,
+            cancha: reservaBase.cancha,
+            deporte: reservaBase.deporte,
+            fecha: req.body?.fecha || reservaBase.fecha,
+            horaInicio: req.body?.horaInicio || reservaBase.horaInicio,
+            horaFin: req.body?.horaFin || reservaBase.horaFin,
+            observaciones: String(
+                req.body?.observaciones ||
+                reservaBase.observaciones ||
+                ''
+            ).trim(),
+        };
+
+        return guardarReserva(req, res);
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const crearWaitlistReserva = async (req = request, res = response) => {
+    try {
+        const usuarioId = req.usuarioAuth?._id;
+        const { cancha, complejo, fecha, horaInicio, horaFin, observaciones = '', sourceReservationId = null } = req.body || {};
+
+        if (!usuarioId) {
+            return res.status(401).json({
+                ok: false,
+                error: 'Debes iniciar sesion para unirte a la lista de espera',
+            });
+        }
+
+        const item = await ReservationWaitlist.create({
+            usuario: usuarioId,
+            cancha,
+            complejo,
+            fecha,
+            horaInicio,
+            horaFin,
+            observaciones: String(observaciones || '').trim(),
+            sourceReservationId,
+        });
+
+        return res.status(201).json({
+            ok: true,
+            waitlist: item,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const obtenerMiWaitlist = async (req = request, res = response) => {
+    try {
+        const items = await ReservationWaitlist.find({
+            usuario: req.usuarioAuth?._id,
+        })
+            .populate('complejo', 'nombre direccion')
+            .populate('cancha', 'nombre tipoDeporte')
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            ok: true,
+            total: items.length,
+            waitlist: items,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     guardarReserva,
     obtenerReserva,
@@ -1186,7 +1447,11 @@ module.exports = {
     obtenerMisReservas,
     cancelarMiReserva,
     cerrarReserva,
+    obtenerReviewComplejoReserva,
     crearReviewComplejo,
     editarReviewComplejo,
     evaluarUsuarioReserva,
+    repetirReserva,
+    crearWaitlistReserva,
+    obtenerMiWaitlist,
 }

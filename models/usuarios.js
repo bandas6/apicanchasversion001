@@ -136,6 +136,25 @@ const UsuarioSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'Equipo',
     },
+    complejosFavoritos: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Complejo',
+    }],
+    canchasFavoritas: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Cancha',
+    }],
+    filtrosGuardados: [{
+        nombre: { type: String, trim: true, default: '' },
+        scope: { type: String, trim: true, default: 'home' },
+        payload: { type: Schema.Types.Mixed, default: {} },
+        createdAt: { type: Date, default: Date.now },
+    }],
+    devicePushTokens: [{
+        token: { type: String, trim: true, default: '' },
+        platform: { type: String, trim: true, default: '' },
+        updatedAt: { type: Date, default: Date.now },
+    }],
     complejo: {
         type: Schema.Types.ObjectId,
         ref: 'Complejo',
@@ -208,6 +227,9 @@ const UsuarioSchema = new Schema({
         ref: 'Usuario',
     }
 });
+
+UsuarioSchema.index({ rol: 1, estado: 1 });
+UsuarioSchema.index({ ciudad: 1, estado: 1 });
 
 
 UsuarioSchema.methods.toJSON = function () {

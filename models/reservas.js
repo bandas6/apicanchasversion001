@@ -161,6 +161,12 @@ const ReservasSchema = new Schema({
     },
 });
 
+ReservasSchema.index({ cancha: 1, fecha: 1, estado: 1 });
+ReservasSchema.index({ complejo: 1, fecha: -1, estado: 1 });
+ReservasSchema.index({ usuario: 1, fecha: -1 });
+ReservasSchema.index({ estado: 1, fecha: 1, horaFin: 1 });
+ReservasSchema.index({ reviewWindowEndsAt: 1 });
+
 ReservasSchema.methods.toJSON = function () {
     const { __v, _id, ...reserva } = this.toObject();
     reserva.uid = _id;

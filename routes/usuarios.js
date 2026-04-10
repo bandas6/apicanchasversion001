@@ -15,6 +15,12 @@ const {
     actualizarVerificacionIdentidadUsuario,
     obtenerAuditoriaRoles,
     obtenerResumenReputacionUsuario,
+    obtenerMisFavoritos,
+    toggleFavoritoUsuario,
+    guardarFiltroUsuario,
+    eliminarFiltroUsuario,
+    registrarPushTokenUsuario,
+    eliminarPushTokenUsuario,
 } = require("../controllers/usuarios.controller");
 const {
     usuarioExiste,
@@ -45,6 +51,36 @@ router.get('/me', [
     validarJWT,
     validarCampos
 ], obtenerMiUsuario);
+
+router.get('/me/favoritos', [
+    validarJWT,
+    validarCampos,
+], obtenerMisFavoritos);
+
+router.post('/me/favoritos/toggle', [
+    validarJWT,
+    validarCampos,
+], toggleFavoritoUsuario);
+
+router.post('/me/filtros', [
+    validarJWT,
+    validarCampos,
+], guardarFiltroUsuario);
+
+router.post('/me/push-token', [
+    validarJWT,
+    validarCampos,
+], registrarPushTokenUsuario);
+
+router.delete('/me/push-token', [
+    validarJWT,
+    validarCampos,
+], eliminarPushTokenUsuario);
+
+router.delete('/me/filtros/:filterId', [
+    validarJWT,
+    validarCampos,
+], eliminarFiltroUsuario);
 
 router.get('/:id', [
     validarJWTOptional,

@@ -5,7 +5,7 @@ const { validarCampos } = require('../middlewares/validar-campos');
 const { obtenerUsuarios } = require('../controllers/usuarios.controller');
 const { obtenerComplejos } = require('../controllers/complejos.controller');
 const { obtenerReservas } = require('../controllers/reservas.controller');
-const { obtenerAuditoriaAdminGeneral } = require('../controllers/admin-general.controller');
+const { obtenerAuditoriaAdminGeneral, obtenerDashboardOperacion } = require('../controllers/admin-general.controller');
 
 const router = Router();
 
@@ -32,5 +32,11 @@ router.get('/auditoria', [
     esAdminGeneralRol,
     validarCampos,
 ], obtenerAuditoriaAdminGeneral);
+
+router.get('/dashboard-operacion', [
+    validarJWT,
+    esAdminGeneralRol,
+    validarCampos,
+], obtenerDashboardOperacion);
 
 module.exports = router;

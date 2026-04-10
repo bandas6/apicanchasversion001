@@ -6,6 +6,9 @@ const { UserReputationEvent } = require('../models/user-reputation-events');
 
 const REVIEW_EDIT_WINDOW_HOURS = 24;
 const AUTO_CLOSE_PENDING_HOURS = 12;
+const COMPLEX_REVIEWS_MIN_FOR_CONFIDENCE = 5;
+const COMPLEX_RATING_PRIOR_MEAN = 4.2;
+const COMPLEX_RATING_PRIOR_WEIGHT = 3;
 
 const CLOSURE_STATES = [
     'completada',
@@ -83,6 +86,101 @@ const resolveReliabilityBadge = (score = 100) => {
     return 'con incidencias';
 };
 
+const resolveComplexRatingStatus = (reviewsCount = 0) => {
+    if (reviewsCount >= COMPLEX_REVIEWS_MIN_FOR_CONFIDENCE) {
+        return 'established';
+    }
+
+    if (reviewsCount > 0) {
+        return 'building';
+    }
+
+    return 'new';
+};
+
+const resolveComplexRatingLabel = (reviewsCount = 0) => {
+    if (reviewsCount >= COMPLEX_REVIEWS_MIN_FOR_CONFIDENCE) {
+        return 'Verificado por reservas';
+    }
+
+    if (reviewsCount > 0) {
+        return 'Nuevo';
+    }
+
+    return 'Nuevo';
+};
+
+const computeComplexRatingSummary = (reviews = []) => {
+    const totalResenas = reviews.length;
+    const reviewsCount = totalResenas;
+    const ratingBreakdown = {
+        oneStar: 0,
+        twoStars: 0,
+        threeStars: 0,
+        fourStars: 0,
+        fiveStars: 0,
+    };
+
+    if (totalResenas === 0) {
+        return {
+            rating: null,
+            ratingAverage: null,
+            ratingAverageDisplay: null,
+            totalResenas,
+            reviewsCount,
+            ratingBreakdown,
+            ratingStatus: 'new',
+            ratingSummaryLabel: 'Nuevo',
+        };
+    }
+
+    let weightedSum = 0;
+    let totalWeight = 0;
+    let rawSum = 0;
+    const now = Date.now();
+    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+
+    for (const item of reviews) {
+        const current = Number(item?.rating || 0);
+        if (current === 1) ratingBreakdown.oneStar += 1;
+        if (current === 2) ratingBreakdown.twoStars += 1;
+        if (current === 3) ratingBreakdown.threeStars += 1;
+        if (current === 4) ratingBreakdown.fourStars += 1;
+        if (current === 5) ratingBreakdown.fiveStars += 1;
+
+        rawSum += current;
+
+        const referenceDate = item?.updatedAt || item?.createdAt;
+        const ageMs = referenceDate ? Math.max(0, now - new Date(referenceDate).getTime()) : ninetyDaysMs;
+        const recencyBoost = Math.max(0, 1 - (ageMs / ninetyDaysMs));
+        const weight = 1 + (recencyBoost * 0.5);
+
+        weightedSum += current * weight;
+        totalWeight += weight;
+    }
+
+    const ratingAverage = Number((rawSum / totalResenas).toFixed(2));
+    const recentWeightedAverage = totalWeight > 0
+        ? weightedSum / totalWeight
+        : ratingAverage;
+    const ratingAverageDisplay = Number(((
+        (recentWeightedAverage * reviewsCount) +
+        (COMPLEX_RATING_PRIOR_MEAN * COMPLEX_RATING_PRIOR_WEIGHT)
+    ) / (reviewsCount + COMPLEX_RATING_PRIOR_WEIGHT)).toFixed(2));
+    const ratingStatus = resolveComplexRatingStatus(reviewsCount);
+
+    return {
+        rating: ratingAverageDisplay,
+        ratingAverage,
+        ratingAverageDisplay,
+        totalResenas,
+        reviewsCount,
+        ratingBreakdown,
+        ratingStatus,
+        ratingSummaryLabel: resolveComplexRatingLabel(reviewsCount),
+    };
+};
+
 const computeReliabilitySummary = (events = []) => {
     let attendanceCount = 0;
     let lateCount = 0;
@@ -132,37 +230,24 @@ const recalculateComplexRating = async (complejoId) => {
         return null;
     }
 
-    const reviews = await ComplexReview.find({ complejoId }).select('rating');
-    const totalResenas = reviews.length;
-    const ratingBreakdown = {
-        oneStar: 0,
-        twoStars: 0,
-        threeStars: 0,
-        fourStars: 0,
-        fiveStars: 0,
-    };
-
-    let rating = null;
-    if (totalResenas > 0) {
-        const total = reviews.reduce((sum, item) => {
-            const current = Number(item?.rating || 0);
-            if (current === 1) ratingBreakdown.oneStar += 1;
-            if (current === 2) ratingBreakdown.twoStars += 1;
-            if (current === 3) ratingBreakdown.threeStars += 1;
-            if (current === 4) ratingBreakdown.fourStars += 1;
-            if (current === 5) ratingBreakdown.fiveStars += 1;
-            return sum + current;
-        }, 0);
-        rating = Number((total / totalResenas).toFixed(2));
-    }
+    const reviews = await ComplexReview.find({
+        complejoId,
+        moderationStatus: 'visible',
+    }).select('rating createdAt updatedAt');
+    const summary = computeComplexRatingSummary(reviews);
 
     await Complejos.findByIdAndUpdate(complejoId, {
-        rating,
-        totalResenas,
-        ratingBreakdown,
+        rating: summary.rating,
+        ratingAverage: summary.ratingAverage,
+        ratingAverageDisplay: summary.ratingAverageDisplay,
+        totalResenas: summary.totalResenas,
+        reviewsCount: summary.reviewsCount,
+        ratingBreakdown: summary.ratingBreakdown,
+        ratingStatus: summary.ratingStatus,
+        ratingSummaryLabel: summary.ratingSummaryLabel,
     });
 
-    return { rating, totalResenas, ratingBreakdown };
+    return summary;
 };
 
 const recalculateUserReliability = async (userId) => {
@@ -350,7 +435,32 @@ const syncReservationsForQuery = async (query = {}) => {
 };
 
 const runReservationLifecycleSweep = async () => {
-    await syncReservationsForQuery({});
+    const now = new Date();
+    const lookbackStart = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 7,
+        0,
+        0,
+        0,
+        0,
+    );
+    const endOfToday = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        23,
+        59,
+        59,
+        999,
+    );
+
+    await syncReservationsForQuery({
+        fecha: {
+            $gte: lookbackStart,
+            $lte: endOfToday,
+        },
+    });
 };
 
 module.exports = {
@@ -365,6 +475,7 @@ module.exports = {
     normalizeBehavior,
     resolveReliabilityBadge,
     computeReliabilitySummary,
+    computeComplexRatingSummary,
     recalculateComplexRating,
     recalculateUserReliability,
     refreshReservationPermissions,
