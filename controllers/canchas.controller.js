@@ -10,6 +10,73 @@ const parseHourToMinutes = (value = '') => {
     return (Number(hour) * 60) + Number(minute);
 };
 
+const normalizePositiveMinutes = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return Math.round(parsed);
+};
+
+const resolveReservationConfig = (payload = {}) => {
+    const duracionSlotMinutos = normalizePositiveMinutes(
+        payload.duracionSlotMinutos,
+        60,
+    );
+    const pasoSlotMinutos = normalizePositiveMinutes(
+        payload.pasoSlotMinutos,
+        duracionSlotMinutos,
+    );
+    const reservaMinimaMinutos = normalizePositiveMinutes(
+        payload.reservaMinimaMinutos,
+        duracionSlotMinutos,
+    );
+    const reservaMaximaMinutos = normalizePositiveMinutes(
+        payload.reservaMaximaMinutos,
+        Math.max(duracionSlotMinutos, reservaMinimaMinutos),
+    );
+
+    return {
+        duracionSlotMinutos,
+        pasoSlotMinutos,
+        reservaMinimaMinutos,
+        reservaMaximaMinutos,
+    };
+};
+
+const validateReservationConfig = ({
+    duracionSlotMinutos,
+    pasoSlotMinutos,
+    reservaMinimaMinutos,
+    reservaMaximaMinutos,
+}) => {
+    if (duracionSlotMinutos < 30) {
+        return 'La duracion del slot debe ser de al menos 30 minutos';
+    }
+
+    if (pasoSlotMinutos < 30) {
+        return 'El paso entre slots debe ser de al menos 30 minutos';
+    }
+
+    if (reservaMinimaMinutos < duracionSlotMinutos) {
+        return 'La reserva minima no puede ser menor a la duracion del slot';
+    }
+
+    if (reservaMaximaMinutos < reservaMinimaMinutos) {
+        return 'La reserva maxima no puede ser menor a la reserva minima';
+    }
+
+    if (reservaMinimaMinutos % duracionSlotMinutos !== 0) {
+        return 'La reserva minima debe ser multiplo de la duracion del slot';
+    }
+
+    if (reservaMaximaMinutos % duracionSlotMinutos !== 0) {
+        return 'La reserva maxima debe ser multiplo de la duracion del slot';
+    }
+
+    return null;
+};
+
 const validateDisponibilidadSemanal = (disponibilidad = []) => {
     if (!Array.isArray(disponibilidad)) {
         return 'La disponibilidad semanal debe ser una lista';
@@ -179,6 +246,55 @@ const validateTarifasEspeciales = (tarifasEspeciales = []) => {
     return validateTarifas(expanded);
 };
 
+const validateBloquesNoDisponibles = (bloques = []) => {
+    if (!Array.isArray(bloques)) {
+        return 'Los bloqueos operativos deben ser una lista';
+    }
+
+    const grouped = new Map();
+
+    for (const bloque of bloques) {
+        if (bloque?.activo === false) {
+            continue;
+        }
+
+        const fecha = String(bloque?.fecha || '').trim();
+        const horaInicio = bloque?.horaInicio;
+        const horaFin = bloque?.horaFin;
+
+        if (!fecha) {
+            return 'Cada bloqueo operativo debe incluir una fecha';
+        }
+
+        if (!horaInicio || !horaFin) {
+            return 'Cada bloqueo operativo debe incluir horaInicio y horaFin';
+        }
+
+        const inicio = parseHourToMinutes(horaInicio);
+        const fin = parseHourToMinutes(horaFin);
+
+        if (fin <= inicio) {
+            return 'Cada bloqueo operativo debe tener una hora fin mayor que la hora inicio';
+        }
+
+        const key = fecha;
+        const items = grouped.get(key) ?? [];
+        items.push({ inicio, fin });
+        grouped.set(key, items);
+    }
+
+    for (const items of grouped.values()) {
+        items.sort((a, b) => a.inicio - b.inicio);
+        for (let i = 1; i < items.length; i += 1) {
+            if (items[i].inicio < items[i - 1].fin) {
+                return 'No puede haber bloqueos operativos solapados en la misma fecha';
+            }
+        }
+    }
+
+    return null;
+};
+
 const expandTarifasEspeciales = (tarifasEspeciales = []) => {
     const expanded = [];
 
@@ -227,7 +343,9 @@ const guardarCancha = async (req = request, res = response) => {
     try {
         const data = req.body;
         const precioHoraBase = Number(data.precioHoraBase ?? data.precioHora ?? 0);
+        const reservationConfig = resolveReservationConfig(data);
         const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const bloquesNoDisponibles = Array.isArray(data.bloquesNoDisponibles) ? data.bloquesNoDisponibles : [];
         const disponibilidadSemanal = Array.isArray(data.disponibilidadSemanal)
             ? data.disponibilidadSemanal
             : buildDisponibilidadFromTarifas(Array.isArray(data.tarifas) ? data.tarifas : []);
@@ -238,6 +356,8 @@ const guardarCancha = async (req = request, res = response) => {
             ? validateTarifasEspeciales(tarifasEspeciales)
             : validateTarifas(data.tarifas ?? []);
         const disponibilidadError = validateDisponibilidadSemanal(disponibilidadSemanal);
+        const reservationConfigError = validateReservationConfig(reservationConfig);
+        const bloquesError = validateBloquesNoDisponibles(bloquesNoDisponibles);
         const deporte = await resolveDeporte(data);
 
         if (tarifasError) {
@@ -254,6 +374,20 @@ const guardarCancha = async (req = request, res = response) => {
             });
         }
 
+        if (reservationConfigError) {
+            return res.status(400).json({
+                ok: false,
+                error: reservationConfigError
+            });
+        }
+
+        if (bloquesError) {
+            return res.status(400).json({
+                ok: false,
+                error: bloquesError
+            });
+        }
+
         if (deporte) {
             data.deporte = deporte._id;
             data.tipoDeporte = deporte.nombre;
@@ -265,6 +399,8 @@ const guardarCancha = async (req = request, res = response) => {
         data.tarifasEspeciales = tarifasEspeciales;
         data.tarifas = tarifasExpandidas;
         data.disponibilidadSemanal = disponibilidadSemanal;
+        data.bloquesNoDisponibles = bloquesNoDisponibles;
+        Object.assign(data, reservationConfig);
 
         const cancha = new Canchas(data);
 
@@ -361,7 +497,9 @@ const actualizarCancha = async (req = request, res = response) => {
 
     try {
         const precioHoraBase = Number(data.precioHoraBase ?? data.precioHora ?? 0);
+        const reservationConfig = resolveReservationConfig(data);
         const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const bloquesNoDisponibles = Array.isArray(data.bloquesNoDisponibles) ? data.bloquesNoDisponibles : [];
         const disponibilidadSemanal = Array.isArray(data.disponibilidadSemanal)
             ? data.disponibilidadSemanal
             : null;
@@ -373,6 +511,10 @@ const actualizarCancha = async (req = request, res = response) => {
             : validateTarifas(data.tarifas ?? []);
         const disponibilidadError = Array.isArray(disponibilidadSemanal)
             ? validateDisponibilidadSemanal(disponibilidadSemanal)
+            : null;
+        const reservationConfigError = validateReservationConfig(reservationConfig);
+        const bloquesError = Array.isArray(data.bloquesNoDisponibles)
+            ? validateBloquesNoDisponibles(bloquesNoDisponibles)
             : null;
         const deporte = await resolveDeporte(data);
 
@@ -387,6 +529,20 @@ const actualizarCancha = async (req = request, res = response) => {
             return res.status(400).json({
                 ok: false,
                 error: disponibilidadError
+            });
+        }
+
+        if (reservationConfigError) {
+            return res.status(400).json({
+                ok: false,
+                error: reservationConfigError
+            });
+        }
+
+        if (bloquesError) {
+            return res.status(400).json({
+                ok: false,
+                error: bloquesError
             });
         }
 
@@ -406,6 +562,17 @@ const actualizarCancha = async (req = request, res = response) => {
         }
         if (Array.isArray(disponibilidadSemanal)) {
             data.disponibilidadSemanal = disponibilidadSemanal;
+        }
+        if (Array.isArray(data.bloquesNoDisponibles)) {
+            data.bloquesNoDisponibles = bloquesNoDisponibles;
+        }
+        if (
+            'duracionSlotMinutos' in data ||
+            'pasoSlotMinutos' in data ||
+            'reservaMinimaMinutos' in data ||
+            'reservaMaximaMinutos' in data
+        ) {
+            Object.assign(data, reservationConfig);
         }
 
         const canchaActualizada = await Canchas.findByIdAndUpdate(

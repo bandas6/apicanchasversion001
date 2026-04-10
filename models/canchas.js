@@ -81,6 +81,30 @@ const TarifaEspecialSchema = new Schema({
     },
 }, { _id: false });
 
+const BloqueNoDisponibleSchema = new Schema({
+    fecha: {
+        type: String,
+        trim: true,
+    },
+    horaInicio: {
+        type: String,
+        required: true,
+    },
+    horaFin: {
+        type: String,
+        required: true,
+    },
+    motivo: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    activo: {
+        type: Boolean,
+        default: true,
+    },
+}, { _id: false });
+
 const CanchasSchema = new Schema({
     nombre: {
         type: String,
@@ -117,6 +141,26 @@ const CanchasSchema = new Schema({
         type: Number,
         default: 0,
     },
+    duracionSlotMinutos: {
+        type: Number,
+        default: 60,
+        min: 30,
+    },
+    pasoSlotMinutos: {
+        type: Number,
+        default: 60,
+        min: 30,
+    },
+    reservaMinimaMinutos: {
+        type: Number,
+        default: 60,
+        min: 30,
+    },
+    reservaMaximaMinutos: {
+        type: Number,
+        default: 120,
+        min: 30,
+    },
     tarifas: {
         type: [TarifaHorarioSchema],
         default: [],
@@ -149,6 +193,10 @@ const CanchasSchema = new Schema({
     }],
     disponibilidadSemanal: {
         type: [DisponibilidadSemanalSchema],
+        default: [],
+    },
+    bloquesNoDisponibles: {
+        type: [BloqueNoDisponibleSchema],
         default: [],
     },
     reserva: {

@@ -49,6 +49,82 @@ const getDayOfWeek = (date) => {
     return jsDay === 0 ? 7 : jsDay;
 };
 
+const formatMinutesToHour = (minutes = 0) => {
+    const safeMinutes = Math.max(0, Math.round(minutes));
+    const hour = String(Math.floor(safeMinutes / 60)).padStart(2, '0');
+    const minute = String(safeMinutes % 60).padStart(2, '0');
+    return `${hour}:${minute}`;
+};
+
+const normalizePositiveMinutes = (value, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return Math.round(parsed);
+};
+
+const resolveCanchaSlotConfig = (cancha = {}) => {
+    const duracionSlotMinutos = normalizePositiveMinutes(
+        cancha.duracionSlotMinutos,
+        60,
+    );
+    const pasoSlotMinutos = normalizePositiveMinutes(
+        cancha.pasoSlotMinutos,
+        duracionSlotMinutos,
+    );
+    const reservaMinimaMinutos = normalizePositiveMinutes(
+        cancha.reservaMinimaMinutos,
+        duracionSlotMinutos,
+    );
+    const reservaMaximaMinutos = normalizePositiveMinutes(
+        cancha.reservaMaximaMinutos,
+        Math.max(duracionSlotMinutos, reservaMinimaMinutos),
+    );
+
+    return {
+        duracionSlotMinutos,
+        pasoSlotMinutos,
+        reservaMinimaMinutos,
+        reservaMaximaMinutos,
+    };
+};
+
+const isSameIsoDate = (rawDate = '', targetDate = new Date()) => {
+    if (!rawDate) {
+        return false;
+    }
+
+    const parsed = new Date(rawDate);
+    if (Number.isNaN(parsed.getTime())) {
+        return String(rawDate).trim() === targetDate.toISOString().split('T')[0];
+    }
+
+    return sameCalendarDay(parsed, targetDate);
+};
+
+const isSlotBlockedByOperation = (slotStart, slotEnd, cancha = {}, fecha = new Date()) => {
+    const blocks = Array.isArray(cancha.bloquesNoDisponibles)
+        ? cancha.bloquesNoDisponibles
+        : [];
+
+    return blocks.some((block) => {
+        if (block?.activo === false || !isSameIsoDate(block?.fecha, fecha)) {
+            return false;
+        }
+
+        const blockStart = parseHourToMinutes(block.horaInicio);
+        const blockEnd = parseHourToMinutes(block.horaFin);
+
+        return hasTimeConflict({
+            startA: slotStart,
+            endA: slotEnd,
+            startB: blockStart,
+            endB: blockEnd,
+        });
+    });
+};
+
 const calculateReservaPrice = ({ cancha, fecha, horaInicio, horaFin }) => {
     const startMinutes = parseHourToMinutes(horaInicio);
     const endMinutes = parseHourToMinutes(horaFin);
@@ -278,11 +354,12 @@ const buildUserReputationSummaryPayload = (usuario = {}) => {
 const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved = true }) => {
     const diaSemana = getDayOfWeek(fecha);
     const tarifasEspeciales = Array.isArray(cancha.tarifasEspeciales) ? cancha.tarifasEspeciales : [];
+    const slotConfig = resolveCanchaSlotConfig(cancha);
     const disponibilidad = Array.isArray(cancha.disponibilidadSemanal)
         ? cancha.disponibilidadSemanal
         : [];
 
-    const baseSlots = disponibilidad
+    const baseBlocks = disponibilidad
         .filter((item) => item?.disponible !== false && Number(item?.diaSemana) === diaSemana)
         .map((item) => ({
             horaInicio: item.horaInicio,
@@ -292,8 +369,8 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
         }));
 
     const fallbackSlots = Array.isArray(cancha.tarifas) ? cancha.tarifas : [];
-    const slots = (baseSlots.length > 0
-        ? baseSlots
+    const sourceBlocks = (baseBlocks.length > 0
+        ? baseBlocks
         : fallbackSlots
             .filter((item) => item?.activo !== false && Number(item?.diaSemana) === diaSemana)
             .map((item) => ({
@@ -303,6 +380,28 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
                 tipo: 'legacy',
             })))
         .filter((item) => item.horaInicio && item.horaFin);
+
+    const slots = sourceBlocks.flatMap((slot) => {
+        const startMinutes = parseHourToMinutes(slot.horaInicio);
+        const endMinutes = parseHourToMinutes(slot.horaFin);
+        const generated = [];
+
+        for (
+            let cursor = startMinutes;
+            cursor + slotConfig.duracionSlotMinutos <= endMinutes;
+            cursor += slotConfig.pasoSlotMinutos
+        ) {
+            generated.push({
+                horaInicio: formatMinutesToHour(cursor),
+                horaFin: formatMinutesToHour(cursor + slotConfig.duracionSlotMinutos),
+                precio: slot.precio,
+                tipo: slot.tipo,
+                duracionMinutos: slotConfig.duracionSlotMinutos,
+            });
+        }
+
+        return generated;
+    });
 
     const now = new Date();
     const isToday = sameCalendarDay(now, fecha);
@@ -326,6 +425,9 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
         } else if (isToday && endMinutes <= currentMinutes) {
             disponible = false;
             motivo = 'horario_pasado';
+        } else if (isSlotBlockedByOperation(startMinutes, endMinutes, cancha, fecha)) {
+            disponible = false;
+            motivo = 'bloqueo_operativo';
         } else {
             const ocupado = reservas.some((item) => {
                 if (item.estado !== 'confirmada') {
@@ -359,13 +461,12 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
 
         return {
             ...slot,
-            precio: Number(
-                tarifaEspecialAplicable?.precio ||
-                slot.precio ||
-                cancha.precioHoraBase ||
-                cancha.precioHora ||
-                0
-            ),
+            precio: calculateReservaPrice({
+                cancha,
+                fecha,
+                horaInicio: slot.horaInicio,
+                horaFin: slot.horaFin,
+            }),
             tipo: tarifaEspecialAplicable ? 'excepcion' : slot.tipo,
             disponible,
             motivo,
@@ -388,13 +489,6 @@ const guardarReserva = async (req = request, res = response) => {
         const startMinutes = parseHourToMinutes(data.horaInicio);
         const endMinutes = parseHourToMinutes(data.horaFin);
 
-        if (endMinutes <= startMinutes) {
-            return res.status(400).json({
-                ok: false,
-                error: 'La hora de fin debe ser mayor a la hora de inicio'
-            });
-        }
-
         const reservaDate = new Date(data.fecha);
         const startOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate());
         const endOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate() + 1);
@@ -406,34 +500,6 @@ const guardarReserva = async (req = request, res = response) => {
                 $lt: endOfDay,
             },
         });
-
-        const reservasExistentes = await Reservas.find({
-            cancha: data.cancha,
-            fecha: {
-                $gte: startOfDay,
-                $lt: endOfDay,
-            },
-            estado: 'confirmada',
-        });
-
-        const hayConflicto = reservasExistentes.some((item) => {
-            const existingStart = parseHourToMinutes(item.horaInicio);
-            const existingEnd = parseHourToMinutes(item.horaFin);
-
-            return hasTimeConflict({
-                startA: startMinutes,
-                endA: endMinutes,
-                startB: existingStart,
-                endB: existingEnd,
-            });
-        });
-
-        if (hayConflicto) {
-            return res.status(409).json({
-                ok: false,
-                error: 'Ya existe una reserva en ese rango horario para esta cancha'
-            });
-        }
 
         if (!data.usuario && usuarioAuth?.rol === 'USER_ROL') {
             data.usuario = String(usuarioAuth._id);
@@ -491,6 +557,71 @@ const guardarReserva = async (req = request, res = response) => {
             });
         }
 
+        const slotConfig = resolveCanchaSlotConfig(cancha);
+        const requestedDuration = endMinutes - startMinutes;
+
+        if (endMinutes <= startMinutes) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La hora de fin debe ser mayor a la hora de inicio'
+            });
+        }
+
+        if (requestedDuration < slotConfig.reservaMinimaMinutos) {
+            return res.status(400).json({
+                ok: false,
+                error: `La reserva minima para esta cancha es de ${slotConfig.reservaMinimaMinutos} minuto(s)`
+            });
+        }
+
+        if (requestedDuration > slotConfig.reservaMaximaMinutos) {
+            return res.status(400).json({
+                ok: false,
+                error: `La reserva maxima para esta cancha es de ${slotConfig.reservaMaximaMinutos} minuto(s)`
+            });
+        }
+
+        if (requestedDuration % slotConfig.duracionSlotMinutos !== 0) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La duracion solicitada no coincide con la unidad de reserva configurada para esta cancha'
+            });
+        }
+
+        const reservasExistentes = await Reservas.find({
+            cancha: data.cancha,
+            fecha: {
+                $gte: startOfDay,
+                $lt: endOfDay,
+            },
+            estado: 'confirmada',
+        });
+
+        const disponibilidadSlots = buildAvailabilitySlots({
+            cancha,
+            fecha: reservaDate,
+            reservas: reservasExistentes,
+            identityApproved: true,
+        });
+        const slotRequested = disponibilidadSlots.find((item) =>
+            item.horaInicio === data.horaInicio &&
+            item.horaFin === data.horaFin,
+        );
+
+        if (!slotRequested) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El horario solicitado no coincide con un slot reservable valido para esta cancha'
+            });
+        }
+
+        if (slotRequested.disponible !== true) {
+            return res.status(409).json({
+                ok: false,
+                error: 'El slot solicitado ya no esta disponible para esta cancha'
+            });
+        }
+
         const complejo = data.complejo
             ? await Complejos.findById(data.complejo)
             : null;
@@ -544,12 +675,7 @@ const guardarReserva = async (req = request, res = response) => {
             }
         }
 
-        const precioTotal = calculateReservaPrice({
-            cancha,
-            fecha: data.fecha,
-            horaInicio: data.horaInicio,
-            horaFin: data.horaFin,
-        });
+        const precioTotal = Number(slotRequested.precio || 0);
 
         const reserva = new Reservas({
             ...data,
@@ -849,6 +975,7 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
             ok: true,
             cancha,
             fecha: startOfDay.toISOString(),
+            slotConfig: resolveCanchaSlotConfig(cancha),
             franjas,
         });
     } catch (error) {
