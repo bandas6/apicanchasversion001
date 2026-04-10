@@ -64,6 +64,15 @@ const normalizarPayloadComplejo = (data = {}) => {
         payload.maxReservasPorUsuarioPorDia = Number(payload.maxReservasPorUsuarioPorDia);
     }
 
+    if (
+        payload.maxDiasAnticipacionReserva === '' ||
+        payload.maxDiasAnticipacionReserva === undefined
+    ) {
+        delete payload.maxDiasAnticipacionReserva;
+    } else if (payload.maxDiasAnticipacionReserva !== null) {
+        payload.maxDiasAnticipacionReserva = Number(payload.maxDiasAnticipacionReserva);
+    }
+
     if (typeof payload.imagenesActualesJson === 'string') {
         try {
             const parsed = JSON.parse(payload.imagenesActualesJson);

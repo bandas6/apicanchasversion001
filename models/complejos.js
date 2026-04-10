@@ -137,6 +137,11 @@ const ComplejosSchema = new Schema({
         min: 1,
         default: 1,
     },
+    maxDiasAnticipacionReserva: {
+        type: Number,
+        min: 1,
+        default: 7,
+    },
     estado: {
         type: Boolean,
         default: true,

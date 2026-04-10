@@ -495,11 +495,44 @@ const guardarReserva = async (req = request, res = response) => {
             ? await Complejos.findById(data.complejo)
             : null;
 
+        const complejoReserva = complejo || await Complejos.findById(cancha.complejo);
+        if (!complejoReserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Complejo no encontrado'
+            });
+        }
+
+        const normalizedReservationDate = new Date(
+            reservaDate.getFullYear(),
+            reservaDate.getMonth(),
+            reservaDate.getDate(),
+        );
+        const today = new Date();
+        const normalizedToday = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate(),
+        );
+        const maxDiasAnticipacionReserva = Math.max(
+            1,
+            Number(complejoReserva.maxDiasAnticipacionReserva || 7),
+        );
+        const maxAllowedDate = new Date(normalizedToday);
+        maxAllowedDate.setDate(maxAllowedDate.getDate() + maxDiasAnticipacionReserva);
+
+        if (normalizedReservationDate.getTime() > maxAllowedDate.getTime()) {
+            return res.status(400).json({
+                ok: false,
+                error: `Este complejo solo permite reservar hasta ${maxDiasAnticipacionReserva} dia(s) de anticipacion`,
+            });
+        }
+
         if (usuarioAuth && ADMIN_ROLES.includes(usuarioAuth.rol)) {
             if (usuarioAuth.rol === 'ADMIN_GENERAL_ROL') {
                 // Superadmin puede operar sobre cualquier complejo.
             } else {
-            const complejoId = complejo?._id || cancha.complejo;
+            const complejoId = complejoReserva._id || cancha.complejo;
             const canManage = await usuarioAdministraComplejo(usuarioAuth._id, complejoId);
 
             if (!canManage) {
@@ -520,6 +553,8 @@ const guardarReserva = async (req = request, res = response) => {
 
         const reserva = new Reservas({
             ...data,
+            complejo: data.complejo || complejoReserva._id,
+            estado: 'pendiente',
             precioTotal,
         });
 
