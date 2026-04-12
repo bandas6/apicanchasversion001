@@ -391,27 +391,30 @@ const guardarComplejo = async (req = request, res = response) => {
         const data = normalizarPayloadComplejo(req.body);
         const files = req.files || {};
         const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
-        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
         data.administrador = req.usuarioAuth._id;
         data.administradores = [req.usuarioAuth._id];
+        const validationError = validateComplejoPayload({
+            data,
+            requireCover: true,
+            hasCoverFile: Boolean(portadaFile?.buffer),
+        });
+
+        if (validationError) {
+            return res.status(400).json({
+                ok: false,
+                error: validationError,
+            });
+        }
+
         const portadaUrl = await uploadImageIfPresent({
             file: portadaFile,
             folder: 'canchas/complejos',
             publicId: buildCloudinaryPublicId('complejo-portada', data.nombre || req.usuarioAuth._id, Date.now()),
         });
-        const galeriaUrls = await uploadManyImages({
-            files: galeriaFiles,
-            folder: 'canchas/complejos',
-            publicIdPrefix: buildCloudinaryPublicId('complejo-galeria', data.nombre || req.usuarioAuth._id),
-        });
         if (portadaUrl) {
             data.img = portadaUrl;
         }
-        data.imagenes = mergeUniqueUrls(
-            galeriaUrls,
-            portadaUrl ? [portadaUrl] : [],
-            data.imagenes || [],
-        );
+        data.imagenes = data.img ? [data.img] : [];
         const lat = data.ubicacionGeo?.lat;
         const lng = data.ubicacionGeo?.lng;
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
@@ -448,7 +451,6 @@ const actualizarComplejo = async (req = request, res = response) => {
         const data = normalizarPayloadComplejo(req.body);
         const files = req.files || {};
         const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
-        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
         const complejoActual = await Complejos.findById(id);
 
         if (!complejoActual) {
@@ -460,32 +462,27 @@ const actualizarComplejo = async (req = request, res = response) => {
 
         data.administrador = req.usuarioAuth._id;
         data.administradores = [req.usuarioAuth._id];
+        data.img = data.img || complejoActual.img || '';
+        const validationError = validateComplejoPayload({
+            data,
+            requireCover: false,
+            hasCoverFile: Boolean(portadaFile?.buffer),
+        });
+
+        if (validationError) {
+            return res.status(400).json({
+                ok: false,
+                error: validationError,
+            });
+        }
+
         const portadaUrl = await uploadImageIfPresent({
             file: portadaFile,
             folder: 'canchas/complejos',
             publicId: buildCloudinaryPublicId('complejo-portada', id, Date.now()),
         });
-        const galeriaUrls = await uploadManyImages({
-            files: galeriaFiles,
-            folder: 'canchas/complejos',
-            publicIdPrefix: buildCloudinaryPublicId('complejo-galeria', id),
-        });
         data.img = portadaUrl || data.img || complejoActual.img || '';
-        data.imagenes = mergeUniqueUrls(
-            data.imagenes || [],
-            galeriaUrls,
-            data.img ? [data.img] : [],
-        );
-        data.img = resolveComplejoCover({
-            uploadedCover: portadaUrl,
-            requestedImages: data.imagenes,
-            uploadedGallery: galeriaUrls,
-            currentCover: complejoActual.img,
-        });
-        data.imagenes = mergeUniqueUrls(
-            data.img ? [data.img] : [],
-            data.imagenes,
-        );
+        data.imagenes = data.img ? [data.img] : [];
         const lat = data.ubicacionGeo?.lat;
         const lng = data.ubicacionGeo?.lng;
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
@@ -519,6 +516,54 @@ const actualizarComplejo = async (req = request, res = response) => {
             error: error.message
         });
     }
+};
+
+
+const validateComplejoPayload = ({ data = {}, requireCover = false, hasCoverFile = false }) => {
+    const nombre = String(data.nombre || '').trim();
+    const descripcion = String(data.descripcion || '').trim();
+    const telefonoContacto = String(data.telefonoContacto || '').trim();
+    const whatsappContacto = String(data.whatsappContacto || '').trim();
+    const direccion = String(data.direccion || '').trim();
+    const maxReservasPorUsuarioPorDia = Number(data.maxReservasPorUsuarioPorDia);
+    const maxDiasAnticipacionReserva = Number(data.maxDiasAnticipacionReserva);
+    const lat = Number(data.ubicacionGeo?.lat ?? data.latitud);
+    const lng = Number(data.ubicacionGeo?.lng ?? data.longitud);
+
+    if (!nombre) {
+        return 'El nombre del complejo es obligatorio';
+    }
+
+    if (!telefonoContacto && !whatsappContacto) {
+        return 'Debes registrar al menos un telefono o un WhatsApp de contacto';
+    }
+
+    if (!descripcion) {
+        return 'La descripcion del complejo es obligatoria';
+    }
+
+    if (!Number.isFinite(maxReservasPorUsuarioPorDia) || maxReservasPorUsuarioPorDia < 1) {
+        return 'El maximo de reservas por usuario por dia debe ser mayor o igual a 1';
+    }
+
+    if (!Number.isFinite(maxDiasAnticipacionReserva) || maxDiasAnticipacionReserva < 1) {
+        return 'El maximo de dias de anticipacion para reservar debe ser mayor o igual a 1';
+    }
+
+    if (!direccion) {
+        return 'Debes seleccionar la ubicacion del complejo en el mapa';
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return 'Debes seleccionar una ubicacion valida para el complejo';
+    }
+
+    const currentCover = String(data.img || '').trim();
+    if (requireCover && !hasCoverFile && !currentCover) {
+        return 'La foto de portada del complejo es obligatoria';
+    }
+
+    return null;
 };
 
 const obtenerComplejos = async (req = request, res = response) => {
