@@ -1,5 +1,6 @@
 const { Router } = require("express");
 const { validarCampos } = require("../middlewares/validar-campos");
+const { uploadMemory } = require("../middlewares/upload-memory");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
 const {
@@ -24,9 +25,14 @@ router.get('/:id',
 
 router.post('/', [
     validarJWT,
+    uploadMemory.fields([
+        { name: 'portada', maxCount: 1 },
+        { name: 'galeria', maxCount: 5 },
+    ]),
+    check('complejoId', 'No es un id valido').optional().isMongoId(),
+    check('complejo', 'No es un id valido').optional().isMongoId(),
+    validarCampos,
     puedeGestionarCancha,
-    check('complejo', 'No es un id valido').isMongoId(),
-    validarCampos
 ], guardarCancha);
 
 router.put('/complejo/:id', [
@@ -38,9 +44,15 @@ router.put('/complejo/:id', [
 
 router.put('/:id', [
     validarJWT,
-    puedeGestionarCancha,
+    uploadMemory.fields([
+        { name: 'portada', maxCount: 1 },
+        { name: 'galeria', maxCount: 5 },
+    ]),
     check('id', 'No es un id valido').isMongoId(),
-    validarCampos
+    check('complejoId', 'No es un id valido').optional().isMongoId(),
+    check('complejo', 'No es un id valido').optional().isMongoId(),
+    validarCampos,
+    puedeGestionarCancha,
 ], actualizarCancha);
 
 router.delete('/eliminar/:id', [

@@ -172,6 +172,10 @@ const CanchasSchema = new Schema({
     img: {
         type: String,
     },
+    imagenes: {
+        type: [String],
+        default: [],
+    },
     _id: {
         type: Schema.Types.ObjectId,
         auto: true,

@@ -1,4 +1,5 @@
 const { response } = require('express');
+const mongoose = require('mongoose');
 const Complejo = require('../models/complejos');
 const Cancha = require('../models/canchas');
 const Equipo = require('../models/equipos');
@@ -138,7 +139,11 @@ const puedeGestionarCancha = async (req, res = response, next) => {
         return next();
     }
 
-    let complejoId = req.body.complejo;
+    let complejoId = req.body?.complejoId || req.body?.complejo;
+
+    if (Array.isArray(complejoId)) {
+        complejoId = complejoId[0];
+    }
 
     if (!complejoId && req.route?.path === '/complejo/:id') {
         complejoId = req.params.id;
@@ -155,6 +160,20 @@ const puedeGestionarCancha = async (req, res = response, next) => {
         }
 
         complejoId = cancha.complejo;
+    }
+
+    if (!complejoId) {
+        return res.status(400).json({
+            ok: false,
+            msg: 'Debes indicar el complejo que deseas gestionar'
+        });
+    }
+
+    if (!mongoose.isValidObjectId(String(complejoId))) {
+        return res.status(400).json({
+            ok: false,
+            msg: 'El complejo indicado no es valido'
+        });
     }
 
     const canManage = await usuarioAdministraComplejo(req.usuarioAuth._id, complejoId);
