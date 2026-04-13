@@ -618,6 +618,7 @@ const obtenerComplejos = async (req = request, res = response) => {
                         'tarifasEspeciales',
                         'disponibilidadSemanal',
                         'img',
+                        'imagenes',
                     ].join(' '),
                 )
                 .lean();
