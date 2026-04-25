@@ -3,7 +3,7 @@ const { nombreComplejoExise } = require("../helpers/db-validators");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { uploadMemory } = require("../middlewares/upload-memory");
 const { check } = require("express-validator");
-const { validarJWT } = require("../middlewares/validar-jwt");
+const { validarJWT, validarJWTOptional } = require("../middlewares/validar-jwt");
 const {
     guardarComplejo,
     obtenerComplejo,
@@ -26,6 +26,7 @@ router.get('/:id/canchas',
     obtenerCanchasPorComplejo);
 
 router.get('/:id',
+    validarJWTOptional,
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
     obtenerComplejo);

@@ -68,6 +68,24 @@ const ComplejosSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'Usuario',
     }],
+    propiedadVerificada: {
+        type: Boolean,
+        default: false,
+    },
+    reclamoEstado: {
+        type: String,
+        enum: ['disponible', 'pendiente', 'verificado'],
+        default: 'disponible',
+    },
+    reclamadoPor: {
+        type: Schema.Types.ObjectId,
+        ref: 'Usuario',
+        default: null,
+    },
+    reclamadoAt: {
+        type: Date,
+        default: null,
+    },
     deportes: [{
         type: Schema.Types.ObjectId,
         ref: 'Deporte',
@@ -151,6 +169,7 @@ const ComplejosSchema = new Schema({
 ComplejosSchema.index({ estado: 1 });
 ComplejosSchema.index({ estado: 1, administrador: 1 });
 ComplejosSchema.index({ estado: 1, administradores: 1 });
+ComplejosSchema.index({ estado: 1, reclamoEstado: 1, propiedadVerificada: 1 });
 
 ComplejosSchema.methods.toJSON = function () {
     const { __v, _id, ...complejo } = this.toObject();

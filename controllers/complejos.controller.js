@@ -2,12 +2,65 @@ const { request, response } = require("express");
 const Complejos = require("../models/complejos");
 const Canchas = require("../models/canchas");
 const Reservas = require("../models/reservas");
+const ComplexClaim = require("../models/complex-claims");
 const { ComplexReview } = require("../models/complex-reviews");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const { uploadBufferToCloudinary } = require("../helpers/cloudinary");
 const { ensurePointWithinActiveCoverage } = require('../helpers/coberturas-geograficas');
 const { recalculateComplexRating } = require('../helpers/reservation-reputation');
 require("../models/deportes");
+
+const userAlreadyManagesComplex = (usuarioId, complejo = {}) => {
+    const requester = String(usuarioId || '');
+    if (!requester) return false;
+
+    const administrador = complejo.administrador;
+    const administradorId = typeof administrador === 'object' && administrador !== null
+        ? String(administrador._id || administrador.uid || '')
+        : String(administrador || '');
+
+    if (administradorId === requester) {
+        return true;
+    }
+
+    return (complejo.administradores || []).some((item) => {
+        const itemId = typeof item === 'object' && item !== null
+            ? String(item._id || item.uid || '')
+            : String(item || '');
+        return itemId === requester;
+    });
+};
+
+const appendClaimMetadata = async ({ complejo, usuarioAuth }) => {
+    const plain = normalizeComplejoRatingSnapshot(complejo);
+    const reclamoEstado = plain.reclamoEstado || 'disponible';
+    const propiedadVerificada = plain.propiedadVerificada === true;
+    const isGeneralAdmin = usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+    const alreadyManages = userAlreadyManagesComplex(usuarioAuth?._id, plain);
+
+    let reclamoUsuarioEstado = '';
+    if (usuarioAuth?._id) {
+        const claim = await ComplexClaim.findOne({
+            complejo: plain.uid || plain._id,
+            solicitante: usuarioAuth._id,
+        })
+            .sort({ createdAt: -1 })
+            .select('estado');
+        reclamoUsuarioEstado = claim?.estado || '';
+    }
+
+    return {
+        ...plain,
+        propiedadVerificada,
+        reclamoEstado,
+        reclamoUsuarioEstado,
+        reclamoDisponible: !isGeneralAdmin &&
+            !alreadyManages &&
+            !propiedadVerificada &&
+            reclamoEstado !== 'verificado' &&
+            reclamoUsuarioEstado !== 'pendiente',
+    };
+};
 
 const normalizarPayloadComplejo = (data = {}) => {
     const payload = { ...data };
@@ -393,6 +446,12 @@ const guardarComplejo = async (req = request, res = response) => {
         const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
         data.administrador = req.usuarioAuth._id;
         data.administradores = [req.usuarioAuth._id];
+        if (req.usuarioAuth?.rol === 'ADMIN_ROL') {
+            data.propiedadVerificada = true;
+            data.reclamoEstado = 'verificado';
+            data.reclamadoPor = req.usuarioAuth._id;
+            data.reclamadoAt = new Date();
+        }
         const validationError = validateComplejoPayload({
             data,
             requireCover: true,
@@ -674,7 +733,10 @@ const obtenerComplejo = async (req = request, res = response) => {
         return res.status(200).json({
             ok: true,
             total: 1,
-            complejo: normalizeComplejoRatingSnapshot(complejoConDisponibilidad)
+            complejo: await appendClaimMetadata({
+                complejo: complejoConDisponibilidad,
+                usuarioAuth: req.usuarioAuth,
+            })
         });
     } catch (error) {
         return res.status(500).json({
