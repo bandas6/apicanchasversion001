@@ -11,6 +11,160 @@ const parseHourToMinutes = (value = '') => {
     return (Number(hour) * 60) + Number(minute);
 };
 
+const formatMinutesToHour = (value = 0) => {
+    const total = Math.max(0, Number(value) || 0);
+    const hour = String(Math.floor(total / 60)).padStart(2, '0');
+    const minute = String(total % 60).padStart(2, '0');
+    return `${hour}:${minute}`;
+};
+
+const hasOwn = (payload = {}, fieldName = '') =>
+    Object.prototype.hasOwnProperty.call(payload, fieldName);
+
+const buildCloudinaryPublicId = (...parts) =>
+    parts
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .join('-')
+        .replace(/[^a-zA-Z0-9-_]/g, '_');
+
+const uploadImageIfPresent = async ({ file, folder, publicId }) => {
+    if (!file?.buffer) {
+        return null;
+    }
+
+    const result = await uploadBufferToCloudinary({
+        buffer: file.buffer,
+        folder,
+        publicId,
+    });
+
+    return result?.secure_url || '';
+};
+
+const uploadManyImages = async ({ files = [], folder, publicIdPrefix }) => {
+    const uploaded = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        if (!file?.buffer) continue;
+
+        const secureUrl = await uploadImageIfPresent({
+            file,
+            folder,
+            publicId: buildCloudinaryPublicId(publicIdPrefix, Date.now(), index),
+        });
+
+        if (secureUrl) {
+            uploaded.push(secureUrl);
+        }
+    }
+
+    return uploaded;
+};
+
+const mergeUniqueUrls = (...collections) => {
+    const seen = new Set();
+    const merged = [];
+
+    for (const collection of collections) {
+        for (const rawItem of collection || []) {
+            const item = String(rawItem || '').trim();
+            if (!item || seen.has(item)) continue;
+            seen.add(item);
+            merged.push(item);
+        }
+    }
+
+    return merged;
+};
+
+const parseJsonField = (payload, fieldName, fallback) => {
+    if (typeof payload[fieldName] !== 'string') {
+        return fallback;
+    }
+
+    try {
+        return JSON.parse(payload[fieldName]);
+    } catch (_) {
+        return fallback;
+    }
+};
+
+const normalizeCanchaPayload = (payload = {}) => {
+    const normalized = { ...payload };
+
+    const tarifasFromJson = parseJsonField(normalized, 'tarifasJson', null);
+    if (Array.isArray(tarifasFromJson)) {
+        normalized.tarifas = tarifasFromJson;
+    }
+
+    const tarifasEspecialesFromJson = parseJsonField(
+        normalized,
+        'tarifasEspecialesJson',
+        null,
+    );
+    if (Array.isArray(tarifasEspecialesFromJson)) {
+        normalized.tarifasEspeciales = tarifasEspecialesFromJson;
+    }
+
+    const disponibilidadFromJson = parseJsonField(
+        normalized,
+        'disponibilidadSemanalJson',
+        null,
+    );
+    if (Array.isArray(disponibilidadFromJson)) {
+        normalized.disponibilidadSemanal = disponibilidadFromJson;
+    }
+
+    const bloquesNoDisponiblesFromJson = parseJsonField(
+        normalized,
+        'bloquesNoDisponiblesJson',
+        null,
+    );
+    if (Array.isArray(bloquesNoDisponiblesFromJson)) {
+        normalized.bloquesNoDisponibles = bloquesNoDisponiblesFromJson;
+    }
+
+    const slotConfig = parseJsonField(normalized, 'slotConfigJson', null);
+    if (slotConfig && typeof slotConfig === 'object' && !Array.isArray(slotConfig)) {
+        Object.assign(normalized, slotConfig);
+    }
+
+    const imagenesActuales = parseJsonField(normalized, 'imagenesActualesJson', null);
+    if (Array.isArray(imagenesActuales)) {
+        normalized.imagenes = imagenesActuales
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    } else if (Array.isArray(normalized.imagenes)) {
+        normalized.imagenes = normalized.imagenes
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    }
+
+    if (typeof normalized.activa === 'string') {
+        normalized.activa = normalized.activa === 'true';
+    }
+
+    if (typeof normalized.enMantenimiento === 'string') {
+        normalized.enMantenimiento = normalized.enMantenimiento === 'true';
+    }
+
+    if (normalized.capacidad !== undefined && normalized.capacidad !== '') {
+        normalized.capacidad = Number(normalized.capacidad);
+    }
+
+    if (normalized.precioHora !== undefined && normalized.precioHora !== '') {
+        normalized.precioHora = Number(normalized.precioHora);
+    }
+
+    if (normalized.precioHoraBase !== undefined && normalized.precioHoraBase !== '') {
+        normalized.precioHoraBase = Number(normalized.precioHoraBase);
+    }
+
+    return normalized;
+};
+
 const normalizePositiveMinutes = (value, fallback) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -19,22 +173,44 @@ const normalizePositiveMinutes = (value, fallback) => {
     return Math.round(parsed);
 };
 
-const resolveReservationConfig = (payload = {}) => {
+const resolveReservationConfig = (payload = {}, fallbackConfig = {}) => {
+    const fallback = {
+        duracionSlotMinutos: normalizePositiveMinutes(fallbackConfig.duracionSlotMinutos, 60),
+        pasoSlotMinutos: normalizePositiveMinutes(
+            fallbackConfig.pasoSlotMinutos,
+            normalizePositiveMinutes(fallbackConfig.duracionSlotMinutos, 60),
+        ),
+        reservaMinimaMinutos: normalizePositiveMinutes(
+            fallbackConfig.reservaMinimaMinutos,
+            normalizePositiveMinutes(fallbackConfig.duracionSlotMinutos, 60),
+        ),
+        reservaMaximaMinutos: normalizePositiveMinutes(
+            fallbackConfig.reservaMaximaMinutos,
+            Math.max(
+                normalizePositiveMinutes(fallbackConfig.duracionSlotMinutos, 60),
+                normalizePositiveMinutes(
+                    fallbackConfig.reservaMinimaMinutos,
+                    normalizePositiveMinutes(fallbackConfig.duracionSlotMinutos, 60),
+                ),
+            ),
+        ),
+    };
+
     const duracionSlotMinutos = normalizePositiveMinutes(
         payload.duracionSlotMinutos,
-        60,
+        fallback.duracionSlotMinutos,
     );
     const pasoSlotMinutos = normalizePositiveMinutes(
         payload.pasoSlotMinutos,
-        duracionSlotMinutos,
+        fallback.pasoSlotMinutos || duracionSlotMinutos,
     );
     const reservaMinimaMinutos = normalizePositiveMinutes(
         payload.reservaMinimaMinutos,
-        duracionSlotMinutos,
+        fallback.reservaMinimaMinutos || duracionSlotMinutos,
     );
     const reservaMaximaMinutos = normalizePositiveMinutes(
         payload.reservaMaximaMinutos,
-        Math.max(duracionSlotMinutos, reservaMinimaMinutos),
+        fallback.reservaMaximaMinutos || Math.max(duracionSlotMinutos, reservaMinimaMinutos),
     );
 
     return {
@@ -127,7 +303,7 @@ const validateDisponibilidadSemanal = (disponibilidad = []) => {
 };
 
 const buildDisponibilidadFromTarifas = (tarifas = []) => {
-    const unique = new Map();
+    const groupedByDay = new Map();
 
     for (const tarifa of tarifas) {
         const diaSemana = Number(tarifa?.diaSemana);
@@ -138,19 +314,97 @@ const buildDisponibilidadFromTarifas = (tarifas = []) => {
             continue;
         }
 
-        const key = `${diaSemana}|${horaInicio}|${horaFin}`;
-        if (!unique.has(key)) {
-            unique.set(key, {
+        const inicio = parseHourToMinutes(horaInicio);
+        const fin = parseHourToMinutes(horaFin);
+        if (!Number.isFinite(inicio) || !Number.isFinite(fin) || fin <= inicio) {
+            continue;
+        }
+
+        const items = groupedByDay.get(diaSemana) ?? [];
+        items.push({ inicio, fin });
+        groupedByDay.set(diaSemana, items);
+    }
+
+    const disponibilidad = [];
+
+    for (const [diaSemana, items] of groupedByDay.entries()) {
+        items.sort((a, b) => a.inicio - b.inicio);
+        let current = null;
+
+        for (const item of items) {
+            if (!current) {
+                current = { ...item };
+                continue;
+            }
+
+            if (item.inicio <= current.fin) {
+                current.fin = Math.max(current.fin, item.fin);
+                continue;
+            }
+
+            disponibilidad.push({
                 diaSemana,
-                horaInicio,
-                horaFin,
+                horaInicio: formatMinutesToHour(current.inicio),
+                horaFin: formatMinutesToHour(current.fin),
+                disponible: true,
+            });
+            current = { ...item };
+        }
+
+        if (current) {
+            disponibilidad.push({
+                diaSemana,
+                horaInicio: formatMinutesToHour(current.inicio),
+                horaFin: formatMinutesToHour(current.fin),
                 disponible: true,
             });
         }
     }
 
-    return Array.from(unique.values());
+    return disponibilidad.sort((a, b) => (
+        a.diaSemana - b.diaSemana ||
+        parseHourToMinutes(a.horaInicio) - parseHourToMinutes(b.horaInicio)
+    ));
 };
+
+const resolvePrecioHoraBase = ({ payload = {}, tarifas = [] }) => {
+    const explicit = Number(payload.precioHoraBase ?? payload.precioHora);
+    if (Number.isFinite(explicit) && explicit > 0) {
+        return explicit;
+    }
+
+    const positivos = tarifas
+        .map((item) => Number(item?.precio))
+        .filter((item) => Number.isFinite(item) && item > 0)
+        .sort((a, b) => a - b);
+
+    return positivos[0] ?? 0;
+};
+
+const resolveDisponibilidadSemanal = ({
+    payload = {},
+    tarifas = [],
+    existingCancha = null,
+}) => {
+    if (Array.isArray(payload.disponibilidadSemanal)) {
+        return payload.disponibilidadSemanal;
+    }
+
+    if (tarifas.length > 0) {
+        return buildDisponibilidadFromTarifas(tarifas);
+    }
+
+    return Array.isArray(existingCancha?.disponibilidadSemanal)
+        ? existingCancha.disponibilidadSemanal
+        : null;
+};
+
+const shouldPersistReservationConfig = (payload = {}) => (
+    hasOwn(payload, 'duracionSlotMinutos') ||
+    hasOwn(payload, 'pasoSlotMinutos') ||
+    hasOwn(payload, 'reservaMinimaMinutos') ||
+    hasOwn(payload, 'reservaMaximaMinutos')
+);
 
 const validateTarifas = (tarifas = []) => {
     if (!Array.isArray(tarifas)) {
@@ -521,6 +775,7 @@ const resolveDeporte = async (payload = {}) => {
 
 const guardarCancha = async (req = request, res = response) => {
     try {
+<<<<<<< HEAD
         const data = normalizarPayloadCancha(req.body);
         const files = req.files || {};
         const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
@@ -532,9 +787,23 @@ const guardarCancha = async (req = request, res = response) => {
         const disponibilidadSemanal = Array.isArray(data.disponibilidadSemanal) && data.disponibilidadSemanal.length > 0
             ? data.disponibilidadSemanal
             : buildDisponibilidadFromTarifas(Array.isArray(data.tarifas) ? data.tarifas : []);
+=======
+        const data = normalizeCanchaPayload(req.body);
+        const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const bloquesNoDisponibles = Array.isArray(data.bloquesNoDisponibles) ? data.bloquesNoDisponibles : [];
+>>>>>>> 93d4cfc (sync)
         const tarifasExpandidas = tarifasEspeciales.length > 0
             ? expandTarifasEspeciales(tarifasEspeciales)
             : (Array.isArray(data.tarifas) ? data.tarifas : []);
+        const precioHoraBase = resolvePrecioHoraBase({
+            payload: data,
+            tarifas: tarifasExpandidas,
+        });
+        const reservationConfig = resolveReservationConfig(data);
+        const disponibilidadSemanal = resolveDisponibilidadSemanal({
+            payload: data,
+            tarifas: tarifasExpandidas,
+        });
         const tarifasError = tarifasEspeciales.length > 0
             ? validateTarifasEspeciales(tarifasEspeciales)
             : validateTarifas(data.tarifas ?? []);
@@ -612,6 +881,34 @@ const guardarCancha = async (req = request, res = response) => {
         data.enMantenimiento = 'enMantenimiento' in data ? data.enMantenimiento : false;
         Object.assign(data, reservationConfig);
         delete data.imagenesActuales;
+
+        const files = req.files || {};
+        const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
+        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
+        const portadaUrl = await uploadImageIfPresent({
+            file: portadaFile,
+            folder: 'canchas',
+            publicId: buildCloudinaryPublicId(
+                'cancha-portada',
+                data.nombre || req.usuarioAuth?._id,
+                Date.now(),
+            ),
+        });
+        const galeriaUrls = await uploadManyImages({
+            files: galeriaFiles,
+            folder: 'canchas',
+            publicIdPrefix: buildCloudinaryPublicId(
+                'cancha-galeria',
+                data.nombre || req.usuarioAuth?._id,
+            ),
+        });
+
+        data.imagenes = mergeUniqueUrls(
+            portadaUrl ? [portadaUrl] : [],
+            galeriaUrls,
+            data.imagenes || [],
+        );
+        data.img = portadaUrl || data.img || data.imagenes[0] || '';
 
         const cancha = new Canchas(data);
 
@@ -704,9 +1001,16 @@ const guardarYAgregarCanchaAComplejo = async (req = request, res = response) => 
 
 const actualizarCancha = async (req = request, res = response) => {
     const { id } = req.params;
+<<<<<<< HEAD
 
     try {
         const canchaActual = await Canchas.findById(id).select('img imagenes complejo');
+=======
+    const data = normalizeCanchaPayload(req.body);
+
+    try {
+        const canchaActual = await Canchas.findById(id);
+>>>>>>> 93d4cfc (sync)
 
         if (!canchaActual) {
             return res.status(404).json({
@@ -715,6 +1019,7 @@ const actualizarCancha = async (req = request, res = response) => {
             });
         }
 
+<<<<<<< HEAD
         const data = normalizarPayloadCancha(req.body);
         const files = req.files || {};
         const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
@@ -760,6 +1065,26 @@ const actualizarCancha = async (req = request, res = response) => {
                 ? validateTarifasEspeciales(tarifasEspeciales)
                 : validateTarifas(data.tarifas ?? []))
             : null;
+=======
+        const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
+        const bloquesNoDisponibles = Array.isArray(data.bloquesNoDisponibles) ? data.bloquesNoDisponibles : [];
+        const tarifasExpandidas = tarifasEspeciales.length > 0
+            ? expandTarifasEspeciales(tarifasEspeciales)
+            : (Array.isArray(data.tarifas) ? data.tarifas : []);
+        const precioHoraBase = resolvePrecioHoraBase({
+            payload: data,
+            tarifas: tarifasExpandidas,
+        });
+        const reservationConfig = resolveReservationConfig(data, canchaActual);
+        const disponibilidadSemanal = resolveDisponibilidadSemanal({
+            payload: data,
+            tarifas: tarifasExpandidas,
+            existingCancha: canchaActual,
+        });
+        const tarifasError = tarifasEspeciales.length > 0
+            ? validateTarifasEspeciales(tarifasEspeciales)
+            : validateTarifas(data.tarifas ?? []);
+>>>>>>> 93d4cfc (sync)
         const disponibilidadError = Array.isArray(disponibilidadSemanal)
             ? validateDisponibilidadSemanal(disponibilidadSemanal)
             : null;
@@ -805,6 +1130,7 @@ const actualizarCancha = async (req = request, res = response) => {
             data.deportes = [deporte._id];
         }
 
+<<<<<<< HEAD
         const currentImages = mergeUniqueImageUrls(
             canchaActual.img ? [canchaActual.img] : [],
             canchaActual.imagenes,
@@ -834,6 +1160,14 @@ const actualizarCancha = async (req = request, res = response) => {
         );
 
         if ('precioHora' in data || 'precioHoraBase' in data) {
+=======
+        if (
+            hasOwn(data, 'precioHora') ||
+            hasOwn(data, 'precioHoraBase') ||
+            Array.isArray(data.tarifas) ||
+            tarifasEspeciales.length > 0
+        ) {
+>>>>>>> 93d4cfc (sync)
             data.precioHoraBase = Number.isNaN(precioHoraBase) ? 0 : precioHoraBase;
             data.precioHora = data.precioHoraBase;
         }
@@ -847,11 +1181,38 @@ const actualizarCancha = async (req = request, res = response) => {
         if (hasBloquesPayload) {
             data.bloquesNoDisponibles = bloquesNoDisponibles;
         }
+<<<<<<< HEAD
         if (hasSlotConfigPayload) {
             Object.assign(data, reservationConfig);
         }
 
         delete data.imagenesActuales;
+=======
+        if (shouldPersistReservationConfig(data)) {
+            Object.assign(data, reservationConfig);
+        }
+
+        const files = req.files || {};
+        const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
+        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
+        const portadaUrl = await uploadImageIfPresent({
+            file: portadaFile,
+            folder: 'canchas',
+            publicId: buildCloudinaryPublicId('cancha-portada', id, Date.now()),
+        });
+        const galeriaUrls = await uploadManyImages({
+            files: galeriaFiles,
+            folder: 'canchas',
+            publicIdPrefix: buildCloudinaryPublicId('cancha-galeria', id),
+        });
+
+        data.imagenes = mergeUniqueUrls(
+            portadaUrl ? [portadaUrl] : [],
+            galeriaUrls,
+            data.imagenes ?? canchaActual.imagenes ?? [],
+        );
+        data.img = portadaUrl || data.img || canchaActual.img || data.imagenes[0] || '';
+>>>>>>> 93d4cfc (sync)
 
         const canchaActualizada = await Canchas.findByIdAndUpdate(
             id,
@@ -861,13 +1222,6 @@ const actualizarCancha = async (req = request, res = response) => {
             .populate('complejo')
             .populate('deporte')
             .populate('deportes');
-
-        if (!canchaActualizada) {
-            return res.status(404).json({
-                ok: false,
-                msg: 'Cancha no encontrada'
-            });
-        }
 
         if (deporte && canchaActualizada.complejo) {
             await Complejos.findByIdAndUpdate(

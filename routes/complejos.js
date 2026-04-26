@@ -10,6 +10,7 @@ const {
     obtenerComplejos,
     obtenerCanchasPorComplejo,
     actualizarComplejo,
+    eliminarComplejo,
     obtenerReviewsComplejo,
     reportarReviewComplejo,
     moderarReviewComplejo,
@@ -67,5 +68,12 @@ router.put('/:id', [
     ]),
     validarCampos
 ], actualizarComplejo);
+
+router.delete('/:id', [
+    validarJWT,
+    puedeGestionarComplejo,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], eliminarComplejo);
 
 module.exports = router;

@@ -132,9 +132,34 @@ const actualizarCobertura = async (req = request, res = response) => {
     }
 };
 
+const eliminarCobertura = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const cobertura = await CoberturaGeografica.findByIdAndDelete(id);
+
+        if (!cobertura) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Cobertura no encontrada',
+            });
+        }
+
+        return res.status(200).json({
+            ok: true,
+            cobertura,
+        });
+    } catch (error) {
+        return res.status(400).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     listarCoberturasActivas,
     listarCoberturasAdmin,
     crearCobertura,
     actualizarCobertura,
+    eliminarCobertura,
 };

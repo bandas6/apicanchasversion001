@@ -8,6 +8,7 @@ const {
     listarCoberturasAdmin,
     crearCobertura,
     actualizarCobertura,
+    eliminarCobertura,
 } = require('../controllers/coberturas-geograficas.controller');
 
 const router = Router();
@@ -32,5 +33,12 @@ router.put('/:id', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], actualizarCobertura);
+
+router.delete('/:id', [
+    validarJWT,
+    esAdminGeneralRol,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], eliminarCobertura);
 
 module.exports = router;

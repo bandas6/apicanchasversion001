@@ -172,10 +172,17 @@ const CanchasSchema = new Schema({
     img: {
         type: String,
     },
+<<<<<<< HEAD
     imagenes: {
         type: [String],
         default: [],
     },
+=======
+    imagenes: [{
+        type: String,
+        trim: true,
+    }],
+>>>>>>> 93d4cfc (sync)
     _id: {
         type: Schema.Types.ObjectId,
         auto: true,

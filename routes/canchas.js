@@ -3,6 +3,7 @@ const { validarCampos } = require("../middlewares/validar-campos");
 const { uploadMemory } = require("../middlewares/upload-memory");
 const { check } = require("express-validator");
 const { validarJWT } = require("../middlewares/validar-jwt");
+const { uploadMemory } = require("../middlewares/upload-memory");
 const {
     obtenerCancha,
     obtenerCanchas,
@@ -33,6 +34,15 @@ router.post('/', [
     check('complejo', 'No es un id valido').optional().isMongoId(),
     validarCampos,
     puedeGestionarCancha,
+<<<<<<< HEAD
+=======
+    uploadMemory.fields([
+        { name: 'portada', maxCount: 1 },
+        { name: 'galeria', maxCount: 5 },
+    ]),
+    check('complejo', 'No es un id valido').isMongoId(),
+    validarCampos
+>>>>>>> 93d4cfc (sync)
 ], guardarCancha);
 
 router.put('/complejo/:id', [
@@ -44,6 +54,10 @@ router.put('/complejo/:id', [
 
 router.put('/:id', [
     validarJWT,
+<<<<<<< HEAD
+=======
+    puedeGestionarCancha,
+>>>>>>> 93d4cfc (sync)
     uploadMemory.fields([
         { name: 'portada', maxCount: 1 },
         { name: 'galeria', maxCount: 5 },
