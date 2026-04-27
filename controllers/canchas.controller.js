@@ -573,7 +573,7 @@ const expandTarifasEspeciales = (tarifasEspeciales = []) => {
     return expanded;
 };
 
-const parseJsonField = (value, fallback) => {
+const tryParseJson = (value, fallback) => {
     if (typeof value === 'string') {
         const trimmed = value.trim();
         if (!trimmed) {
@@ -595,7 +595,7 @@ const parseJsonField = (value, fallback) => {
 };
 
 const normalizeStringList = (value = []) => {
-    const source = Array.isArray(value) ? value : parseJsonField(value, []);
+    const source = Array.isArray(value) ? value : tryParseJson(value, []);
     if (!Array.isArray(source)) {
         return [];
     }
@@ -627,48 +627,6 @@ const normalizeBooleanField = (value, fallback) => {
     return fallback;
 };
 
-const buildCloudinaryPublicId = (...parts) =>
-    parts
-        .map((item) => String(item || '').trim())
-        .filter(Boolean)
-        .join('-')
-        .replace(/[^a-zA-Z0-9-_]/g, '_');
-
-const uploadImageIfPresent = async ({ file, folder, publicId }) => {
-    if (!file?.buffer) {
-        return null;
-    }
-
-    const result = await uploadBufferToCloudinary({
-        buffer: file.buffer,
-        folder,
-        publicId,
-    });
-
-    return result?.secure_url || '';
-};
-
-const uploadManyImages = async ({ files = [], folder, publicIdPrefix }) => {
-    const uploaded = [];
-
-    for (let index = 0; index < files.length; index += 1) {
-        const file = files[index];
-        if (!file?.buffer) continue;
-
-        const url = await uploadImageIfPresent({
-            file,
-            folder,
-            publicId: buildCloudinaryPublicId(publicIdPrefix, index + 1, Date.now()),
-        });
-
-        if (url) {
-            uploaded.push(url);
-        }
-    }
-
-    return uploaded;
-};
-
 const mergeUniqueImageUrls = (...groups) => {
     const unique = [];
     const seen = new Set();
@@ -690,21 +648,21 @@ const mergeUniqueImageUrls = (...groups) => {
 
 const normalizarPayloadCancha = (payload = {}) => {
     const data = { ...payload };
-    const tarifas = parseJsonField(data.tarifasJson, parseJsonField(data.tarifas, []));
-    const tarifasEspeciales = parseJsonField(
+    const tarifas = tryParseJson(data.tarifasJson, tryParseJson(data.tarifas, []));
+    const tarifasEspeciales = tryParseJson(
         data.tarifasEspecialesJson,
-        parseJsonField(data.tarifasEspeciales, []),
+        tryParseJson(data.tarifasEspeciales, []),
     );
-    const disponibilidadSemanal = parseJsonField(
+    const disponibilidadSemanal = tryParseJson(
         data.disponibilidadSemanalJson,
-        parseJsonField(data.disponibilidadSemanal, []),
+        tryParseJson(data.disponibilidadSemanal, []),
     );
-    const bloquesNoDisponibles = parseJsonField(
+    const bloquesNoDisponibles = tryParseJson(
         data.bloquesNoDisponiblesJson,
-        parseJsonField(data.bloquesNoDisponibles, []),
+        tryParseJson(data.bloquesNoDisponibles, []),
     );
-    const dias = parseJsonField(data.diasJson, parseJsonField(data.dias, []));
-    const slotConfig = parseJsonField(data.slotConfigJson, {});
+    const dias = tryParseJson(data.diasJson, tryParseJson(data.dias, []));
+    const slotConfig = tryParseJson(data.slotConfigJson, {});
 
     if (slotConfig && typeof slotConfig === 'object' && !Array.isArray(slotConfig)) {
         Object.assign(data, slotConfig);
@@ -717,7 +675,7 @@ const normalizarPayloadCancha = (payload = {}) => {
     data.bloquesNoDisponibles = Array.isArray(bloquesNoDisponibles) ? bloquesNoDisponibles : [];
     data.dias = Array.isArray(dias) ? dias : [];
     data.imagenesActuales = normalizeStringList(
-        parseJsonField(data.imagenesActualesJson, data.imagenesActuales ?? data.imagenes ?? []),
+        tryParseJson(data.imagenesActualesJson, data.imagenesActuales ?? data.imagenes ?? []),
     );
 
     if (data.capacidad !== undefined) {
@@ -775,23 +733,9 @@ const resolveDeporte = async (payload = {}) => {
 
 const guardarCancha = async (req = request, res = response) => {
     try {
-<<<<<<< HEAD
-        const data = normalizarPayloadCancha(req.body);
-        const files = req.files || {};
-        const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
-        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
-        const precioHoraBase = Number(data.precioHoraBase ?? data.precioHora ?? 0);
-        const reservationConfig = resolveReservationConfig(data);
-        const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
-        const bloquesNoDisponibles = Array.isArray(data.bloquesNoDisponibles) ? data.bloquesNoDisponibles : [];
-        const disponibilidadSemanal = Array.isArray(data.disponibilidadSemanal) && data.disponibilidadSemanal.length > 0
-            ? data.disponibilidadSemanal
-            : buildDisponibilidadFromTarifas(Array.isArray(data.tarifas) ? data.tarifas : []);
-=======
         const data = normalizeCanchaPayload(req.body);
         const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
         const bloquesNoDisponibles = Array.isArray(data.bloquesNoDisponibles) ? data.bloquesNoDisponibles : [];
->>>>>>> 93d4cfc (sync)
         const tarifasExpandidas = tarifasEspeciales.length > 0
             ? expandTarifasEspeciales(tarifasEspeciales)
             : (Array.isArray(data.tarifas) ? data.tarifas : []);
@@ -853,30 +797,12 @@ const guardarCancha = async (req = request, res = response) => {
             data.deportes = [deporte._id];
         }
 
-        const portadaUrl = await uploadImageIfPresent({
-            file: portadaFile,
-            folder: 'canchas/canchas',
-            publicId: buildCloudinaryPublicId('cancha-portada', data.complejo, data.nombre || Date.now()),
-        });
-        const galeriaUrls = await uploadManyImages({
-            files: galeriaFiles,
-            folder: 'canchas/canchas',
-            publicIdPrefix: buildCloudinaryPublicId('cancha-galeria', data.complejo, data.nombre || Date.now()),
-        });
-        const imagenes = mergeUniqueImageUrls(
-            portadaUrl ? [portadaUrl] : [],
-            data.imagenesActuales,
-            galeriaUrls,
-        );
-
         data.precioHoraBase = Number.isNaN(precioHoraBase) ? 0 : precioHoraBase;
         data.precioHora = data.precioHoraBase;
         data.tarifasEspeciales = tarifasEspeciales;
         data.tarifas = tarifasExpandidas;
         data.disponibilidadSemanal = disponibilidadSemanal;
         data.bloquesNoDisponibles = bloquesNoDisponibles;
-        data.img = portadaUrl || imagenes[0] || '';
-        data.imagenes = mergeUniqueImageUrls(data.img ? [data.img] : [], imagenes);
         data.activa = 'activa' in data ? data.activa : true;
         data.enMantenimiento = 'enMantenimiento' in data ? data.enMantenimiento : false;
         Object.assign(data, reservationConfig);
@@ -1001,16 +927,9 @@ const guardarYAgregarCanchaAComplejo = async (req = request, res = response) => 
 
 const actualizarCancha = async (req = request, res = response) => {
     const { id } = req.params;
-<<<<<<< HEAD
 
     try {
         const canchaActual = await Canchas.findById(id).select('img imagenes complejo');
-=======
-    const data = normalizeCanchaPayload(req.body);
-
-    try {
-        const canchaActual = await Canchas.findById(id);
->>>>>>> 93d4cfc (sync)
 
         if (!canchaActual) {
             return res.status(404).json({
@@ -1019,7 +938,6 @@ const actualizarCancha = async (req = request, res = response) => {
             });
         }
 
-<<<<<<< HEAD
         const data = normalizarPayloadCancha(req.body);
         const files = req.files || {};
         const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
@@ -1065,26 +983,6 @@ const actualizarCancha = async (req = request, res = response) => {
                 ? validateTarifasEspeciales(tarifasEspeciales)
                 : validateTarifas(data.tarifas ?? []))
             : null;
-=======
-        const tarifasEspeciales = Array.isArray(data.tarifasEspeciales) ? data.tarifasEspeciales : [];
-        const bloquesNoDisponibles = Array.isArray(data.bloquesNoDisponibles) ? data.bloquesNoDisponibles : [];
-        const tarifasExpandidas = tarifasEspeciales.length > 0
-            ? expandTarifasEspeciales(tarifasEspeciales)
-            : (Array.isArray(data.tarifas) ? data.tarifas : []);
-        const precioHoraBase = resolvePrecioHoraBase({
-            payload: data,
-            tarifas: tarifasExpandidas,
-        });
-        const reservationConfig = resolveReservationConfig(data, canchaActual);
-        const disponibilidadSemanal = resolveDisponibilidadSemanal({
-            payload: data,
-            tarifas: tarifasExpandidas,
-            existingCancha: canchaActual,
-        });
-        const tarifasError = tarifasEspeciales.length > 0
-            ? validateTarifasEspeciales(tarifasEspeciales)
-            : validateTarifas(data.tarifas ?? []);
->>>>>>> 93d4cfc (sync)
         const disponibilidadError = Array.isArray(disponibilidadSemanal)
             ? validateDisponibilidadSemanal(disponibilidadSemanal)
             : null;
@@ -1130,7 +1028,6 @@ const actualizarCancha = async (req = request, res = response) => {
             data.deportes = [deporte._id];
         }
 
-<<<<<<< HEAD
         const currentImages = mergeUniqueImageUrls(
             canchaActual.img ? [canchaActual.img] : [],
             canchaActual.imagenes,
@@ -1160,14 +1057,6 @@ const actualizarCancha = async (req = request, res = response) => {
         );
 
         if ('precioHora' in data || 'precioHoraBase' in data) {
-=======
-        if (
-            hasOwn(data, 'precioHora') ||
-            hasOwn(data, 'precioHoraBase') ||
-            Array.isArray(data.tarifas) ||
-            tarifasEspeciales.length > 0
-        ) {
->>>>>>> 93d4cfc (sync)
             data.precioHoraBase = Number.isNaN(precioHoraBase) ? 0 : precioHoraBase;
             data.precioHora = data.precioHoraBase;
         }
@@ -1181,38 +1070,11 @@ const actualizarCancha = async (req = request, res = response) => {
         if (hasBloquesPayload) {
             data.bloquesNoDisponibles = bloquesNoDisponibles;
         }
-<<<<<<< HEAD
         if (hasSlotConfigPayload) {
             Object.assign(data, reservationConfig);
         }
 
         delete data.imagenesActuales;
-=======
-        if (shouldPersistReservationConfig(data)) {
-            Object.assign(data, reservationConfig);
-        }
-
-        const files = req.files || {};
-        const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
-        const galeriaFiles = Array.isArray(files.galeria) ? files.galeria : [];
-        const portadaUrl = await uploadImageIfPresent({
-            file: portadaFile,
-            folder: 'canchas',
-            publicId: buildCloudinaryPublicId('cancha-portada', id, Date.now()),
-        });
-        const galeriaUrls = await uploadManyImages({
-            files: galeriaFiles,
-            folder: 'canchas',
-            publicIdPrefix: buildCloudinaryPublicId('cancha-galeria', id),
-        });
-
-        data.imagenes = mergeUniqueUrls(
-            portadaUrl ? [portadaUrl] : [],
-            galeriaUrls,
-            data.imagenes ?? canchaActual.imagenes ?? [],
-        );
-        data.img = portadaUrl || data.img || canchaActual.img || data.imagenes[0] || '';
->>>>>>> 93d4cfc (sync)
 
         const canchaActualizada = await Canchas.findByIdAndUpdate(
             id,

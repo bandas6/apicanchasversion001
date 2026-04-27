@@ -592,8 +592,6 @@ const actualizarComplejo = async (req = request, res = response) => {
     }
 };
 
-<<<<<<< HEAD
-
 const validateComplejoPayload = ({ data = {}, requireCover = false, hasCoverFile = false }) => {
     const nombre = String(data.nombre || '').trim();
     const descripcion = String(data.descripcion || '').trim();
@@ -639,7 +637,8 @@ const validateComplejoPayload = ({ data = {}, requireCover = false, hasCoverFile
     }
 
     return null;
-=======
+};
+
 const eliminarComplejo = async (req = request, res = response) => {
     const { id } = req.params;
 
@@ -719,7 +718,6 @@ const eliminarComplejo = async (req = request, res = response) => {
             error: error.message,
         });
     }
->>>>>>> 93d4cfc (sync)
 };
 
 const obtenerComplejos = async (req = request, res = response) => {
