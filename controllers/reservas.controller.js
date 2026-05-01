@@ -803,8 +803,21 @@ const actualizarReserva = async (req = request, res = response) => {
             }
         }
 
-        const reserva = await Reservas.findByIdAndUpdate(id, { ...req.body }, { new: true })
-            .then((item) => populateReservaQuery(item));
+        const reserva = await Reservas.findByIdAndUpdate(
+            id,
+            { ...req.body },
+            {
+                new: true,
+                runValidators: true,
+            },
+        );
+
+        if (!reserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Reserva no encontrada'
+            });
+        }
 
         if (nextState === 'confirmada') {
             const reservaDate = new Date(reserva.fecha);
@@ -866,6 +879,9 @@ const actualizarReserva = async (req = request, res = response) => {
         }
 
         await refreshReservationPermissions(reserva);
+        const reservaPopulated = await populateReservaQuery(
+            Reservas.findById(reserva._id),
+        );
 
         await auditAdminGeneralAction({
             req,
@@ -882,7 +898,7 @@ const actualizarReserva = async (req = request, res = response) => {
 
         return res.status(200).json({
             ok: true,
-            reserva
+            reserva: reservaPopulated
         });
     } catch (error) {
         return res.status(500).json({
