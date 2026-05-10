@@ -129,6 +129,10 @@ const normalizeScheduleValues = (value) => {
 
 module.exports = {
     CATALOGOS_PERFIL,
+    POSICIONES_POR_DEPORTE,
+    TIPOS_CANCHA_POR_DEPORTE,
+    GENERIC_POSITION_OPTIONS,
+    GENERIC_COURT_OPTIONS,
     normalizeForCompare,
     normalizeCatalogValue,
     normalizeScheduleValues,
