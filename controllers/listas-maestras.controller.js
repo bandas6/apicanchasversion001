@@ -58,9 +58,9 @@ const CENTRO_MENSAJES_CATALOGS = {
     audienceOptions: [
         { value: "ALL", label: "Todos, sin sesion incluida" },
         { value: "AUTHENTICATED", label: "Solo usuarios autenticados" },
-        { value: "USER_ROL", label: "Solo usuarios" },
-        { value: "ADMIN_ROL", label: "Solo admins de complejo" },
-        { value: "ADMIN_GENERAL_ROL", label: "Solo admin general" },
+        { value: "USER", label: "Solo usuarios" },
+        { value: "ADMIN", label: "Solo admins de complejo" },
+        { value: "DEV", label: "Solo admin general" },
     ],
     layoutOptions: [
         { value: "SOLO_TEXTO", label: "Solo texto" },

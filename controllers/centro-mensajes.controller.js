@@ -3,7 +3,7 @@ const Complejo = require('../models/complejos');
 const CentroMensaje = require('../models/centro-mensajes');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
 
-const AUDIENCIAS_VALIDAS = ['ALL', 'AUTHENTICATED', 'USER_ROL', 'ADMIN_ROL', 'ADMIN_GENERAL_ROL'];
+const AUDIENCIAS_VALIDAS = ['ALL', 'AUTHENTICATED', 'USER', 'ADMIN', 'DEV'];
 const TIPOS_VALIDOS = ['TIP', 'BANNER', 'ALERTA', 'NOTIFICACION'];
 const SCOPES_VALIDOS = ['GLOBAL', 'COMPLEJO'];
 const CTA_VALIDOS = ['NONE', 'COMPLEJOS', 'RESERVAS', 'COMPLEJO', 'URL'];
@@ -11,7 +11,7 @@ const LAYOUTS_VALIDOS = ['SOLO_TEXTO', 'IMAGEN_TEXTO', 'SOLO_IMAGEN'];
 const POSICIONES_VALIDAS = ['TOP', 'CENTER', 'BOTTOM'];
 const MODOS_ENTREGA_VALIDOS = ['INMEDIATO', 'ROTACION'];
 
-const isGeneralAdmin = (usuarioAuth) => usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+const isGeneralAdmin = (usuarioAuth) => usuarioAuth?.rol === 'DEV';
 
 const normalizeText = (value, fallback = '') => String(value ?? fallback).trim();
 

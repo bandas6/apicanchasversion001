@@ -88,7 +88,7 @@ const usuarioNoExiste = async (id) => {
 const esRolValido = async (rol = '') => {
 
     if (rol == '') {
-        rol = 'USER_ROL'
+        rol = 'USER'
     }
 
     // console.log(rol)
@@ -102,7 +102,7 @@ const esRolValido = async (rol = '') => {
 }
 
 const esRolAdministrableValido = async (rol = '') => {
-    const allowedRoles = ['USER_ROL', 'ADMIN_ROL'];
+    const allowedRoles = ['USER', 'ADMIN'];
 
     if (!allowedRoles.includes(rol)) {
         throw new Error(`El rol ${rol} no es administrable`);
@@ -110,7 +110,7 @@ const esRolAdministrableValido = async (rol = '') => {
 }
 
 const esRolGeneralAdministrableValido = async (rol = '') => {
-    const allowedRoles = ['ADMIN_ROL', 'ADMIN_GENERAL_ROL'];
+    const allowedRoles = ['ADMIN', 'DEV'];
 
     if (!allowedRoles.includes(rol)) {
         throw new Error(`El rol ${rol} no es valido para gestion general`);

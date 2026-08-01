@@ -501,7 +501,7 @@ const guardarReserva = async (req = request, res = response) => {
             },
         });
 
-        if (!data.usuario && usuarioAuth?.rol === 'USER_ROL') {
+        if (!data.usuario && usuarioAuth?.rol === 'USER') {
             data.usuario = String(usuarioAuth._id);
         }
 
@@ -532,10 +532,10 @@ const guardarReserva = async (req = request, res = response) => {
                 });
             }
 
-            if (usuario.rol !== 'USER_ROL') {
+            if (usuario.rol !== 'USER') {
                 return res.status(400).json({
                     ok: false,
-                    error: 'Solo se pueden asignar reservas a usuarios con USER_ROL'
+                    error: 'Solo se pueden asignar reservas a usuarios con USER'
                 });
             }
 
@@ -660,7 +660,7 @@ const guardarReserva = async (req = request, res = response) => {
         }
 
         if (usuarioAuth && ADMIN_ROLES.includes(usuarioAuth.rol)) {
-            if (usuarioAuth.rol === 'ADMIN_GENERAL_ROL') {
+            if (usuarioAuth.rol === 'DEV') {
                 // Superadmin puede operar sobre cualquier complejo.
             } else {
             const complejoId = complejoReserva._id || cancha.complejo;
@@ -976,7 +976,7 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
             estado: 'confirmada',
         }).sort({ horaInicio: 1 });
 
-        const identityApproved = req.usuarioAuth?.rol && req.usuarioAuth.rol !== 'USER_ROL'
+        const identityApproved = req.usuarioAuth?.rol && req.usuarioAuth.rol !== 'USER'
             ? true
             : req.usuarioAuth?.identidadEstado === 'aprobada';
 
@@ -1012,7 +1012,7 @@ const obtenerReservas = async (req = request, res = response) => {
     if (estado) query.estado = estado;
 
     try {
-        if (req.usuarioAuth?.rol === 'ADMIN_ROL') {
+        if (req.usuarioAuth?.rol === 'ADMIN') {
             const complejosAdministrados = await Complejos.find({
                 $or: [
                     { administrador: req.usuarioAuth._id },

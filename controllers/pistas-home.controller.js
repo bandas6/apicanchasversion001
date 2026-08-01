@@ -18,8 +18,8 @@ const normalizePayload = (body = {}) => ({
     observacionesRevision: String(body.observacionesRevision || '').trim(),
 });
 
-const isGeneralAdmin = (usuarioAuth) => usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
-const AUDIENCIAS_VALIDAS = ['ALL', 'AUTHENTICATED', 'USER_ROL', 'ADMIN_ROL', 'ADMIN_GENERAL_ROL'];
+const isGeneralAdmin = (usuarioAuth) => usuarioAuth?.rol === 'DEV';
+const AUDIENCIAS_VALIDAS = ['ALL', 'AUTHENTICATED', 'USER', 'ADMIN', 'DEV'];
 
 const managedComplejosByUser = async (usuarioId) => {
     const complejos = await Complejo.find({

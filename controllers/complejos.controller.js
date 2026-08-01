@@ -35,7 +35,7 @@ const appendClaimMetadata = async ({ complejo, usuarioAuth }) => {
     const plain = normalizeComplejoRatingSnapshot(complejo);
     const reclamoEstado = plain.reclamoEstado || 'disponible';
     const propiedadVerificada = plain.propiedadVerificada === true;
-    const isGeneralAdmin = usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+    const isGeneralAdmin = usuarioAuth?.rol === 'DEV';
     const alreadyManages = userAlreadyManagesComplex(usuarioAuth?._id, plain);
 
     let reclamoUsuarioEstado = '';
@@ -461,7 +461,7 @@ const guardarComplejo = async (req = request, res = response) => {
         const portadaFile = Array.isArray(files.portada) ? files.portada[0] : null;
         data.administrador = req.usuarioAuth._id;
         data.administradores = [req.usuarioAuth._id];
-        if (req.usuarioAuth?.rol === 'ADMIN_ROL') {
+        if (req.usuarioAuth?.rol === 'ADMIN') {
             data.propiedadVerificada = true;
             data.reclamoEstado = 'verificado';
             data.reclamadoPor = req.usuarioAuth._id;

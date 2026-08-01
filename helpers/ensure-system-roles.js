@@ -3,31 +3,37 @@ const Usuarios = require('../models/usuarios');
 
 const SYSTEM_ROLES = [
     {
-        rol: 'USER_ROL',
+        rol: 'USER',
         etiqueta: 'USUARIO',
         descripcion: 'Usuario final de la plataforma',
     },
     {
-        rol: 'ADMIN_ROL',
+        rol: 'ADMIN',
         etiqueta: 'USUARIO ADMINISTRADOR',
         descripcion: 'Administrador operativo de complejos asignados',
     },
     {
-        rol: 'ADMIN_GENERAL_ROL',
+        rol: 'DEV',
         etiqueta: 'SUPERADMIN',
         descripcion: 'Superadministrador interno de la plataforma',
     },
 ];
 
 const ROLE_ALIASES = {
-    USER_ROL: 'USER_ROL',
-    user_rol: 'USER_ROL',
-    ADMIN_ROL: 'ADMIN_ROL',
-    admin_rol: 'ADMIN_ROL',
-    ADMIN_USER_ROL: 'ADMIN_ROL',
-    admin_user_rol: 'ADMIN_ROL',
-    ADMIN_GENERAL_ROL: 'ADMIN_GENERAL_ROL',
-    admin_general_rol: 'ADMIN_GENERAL_ROL',
+    USER_ROL: 'USER',
+    user_rol: 'USER',
+    USER: 'USER',
+    user: 'USER',
+    ADMIN_ROL: 'ADMIN',
+    admin_rol: 'ADMIN',
+    ADMIN_USER_ROL: 'ADMIN',
+    admin_user_rol: 'ADMIN',
+    ADMIN: 'ADMIN',
+    admin: 'ADMIN',
+    ADMIN_GENERAL_ROL: 'DEV',
+    admin_general_rol: 'DEV',
+    DEV: 'DEV',
+    dev: 'DEV',
 };
 
 const normalizeRoleCode = (value = '') => {

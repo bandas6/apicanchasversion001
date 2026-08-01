@@ -28,7 +28,7 @@ const PistasHomeSchema = new Schema({
     },
     audiencia: {
         type: String,
-        enum: ['ALL', 'AUTHENTICATED', 'USER_ROL', 'ADMIN_ROL', 'ADMIN_GENERAL_ROL'],
+        enum: ['ALL', 'AUTHENTICATED', 'USER', 'ADMIN', 'DEV'],
         default: 'ALL',
     },
     complejo: {
