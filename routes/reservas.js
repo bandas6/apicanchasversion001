@@ -68,7 +68,7 @@ router.get('/:id',
     obtenerReserva);
 
 router.post('/', [
-    validarJWTOptional,
+    validarJWT,
     check('complejo', 'No es un id valido').isMongoId(),
     check('cancha', 'No es un id valido').isMongoId(),
     validarCampos
