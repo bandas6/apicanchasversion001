@@ -130,7 +130,7 @@ const esReferenciaArchivoValida = (value = '') => {
         || normalized.startsWith('archivo_local:');
 };
 
-const isGeneralAdmin = (req = {}) => req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+const isGeneralAdmin = (req = {}) => req.usuarioAuth?.rol === 'DEV';
 const buildSearchRegex = (value = '') => {
     const normalized = String(value || '').trim();
     if (!normalized) {
@@ -184,7 +184,7 @@ const toPublicUsuario = (usuario = null) => {
         zonaPreferida: source.zonaPreferida || '',
         horariosPreferidos: Array.isArray(source.horariosPreferidos) ? source.horariosPreferidos : [],
         tipoCanchaPreferida: source.tipoCanchaPreferida || '',
-        rol: source.rol || 'USER_ROL',
+        rol: source.rol || 'USER',
         equipo_id: source.equipo_id || null,
         estado: source.estado === true,
     };
@@ -197,14 +197,14 @@ const obtenerUsuarios = async (req = require, res = response) => {
         const fullAccess = isGeneralAdmin(req);
         const searchRegex = buildSearchRegex(q);
 
-        if (rol && (fullAccess || rol === 'USER_ROL')) {
+        if (rol && (fullAccess || rol === 'USER')) {
             query.rol = rol;
         } else if (!fullAccess) {
-            query.rol = 'USER_ROL';
+            query.rol = 'USER';
         }
 
         if (destacados === 'true') {
-            query.rol = 'USER_ROL';
+            query.rol = 'USER';
             query.identidadEstado = 'aprobada';
         }
 
@@ -252,7 +252,7 @@ const obtenerUsuarios = async (req = require, res = response) => {
 const obtenerJugadoresPublicos = async (req = require, res = response) => {
     req.query = {
         ...req.query,
-        rol: 'USER_ROL',
+        rol: 'USER',
     };
     return obtenerUsuarios(req, res);
 };
@@ -488,7 +488,7 @@ const obtenerUsuario = async (req = require, res = response) => {
             })
         }
 
-        if (!canReadFullUsuario(req, usuario) && usuario.rol !== 'USER_ROL') {
+        if (!canReadFullUsuario(req, usuario) && usuario.rol !== 'USER') {
             return res.status(404).json({
                 ok: false,
                 error: 'Usuario no encontrado'
@@ -517,7 +517,7 @@ const guardarUsuario = async (req = require, res = response) => {
     try {
 
         const data = normalizarPayloadUsuario(req.body);
-        data.rol = 'USER_ROL';
+        data.rol = 'USER';
         const usuario = new Usuarios(data);
 
         // Ecriptar contraseña
@@ -564,7 +564,7 @@ const actualizarUsuario = async (req = require, res = response) => {
         } = req.body;
         const resto = normalizarPayloadUsuario(restoRaw);
 
-        if (req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL') {
+        if (req.usuarioAuth?.rol === 'DEV') {
             if (rol !== undefined) {
                 resto.rol = rol;
             }
@@ -661,7 +661,7 @@ const obtenerResumenReputacionUsuario = async (req = require, res = response) =>
     try {
         const { id } = req.params;
         const currentUserId = String(req.usuarioAuth?._id || '');
-        const isGeneralAdmin = req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+        const isGeneralAdmin = req.usuarioAuth?.rol === 'DEV';
         const isSameUser = currentUserId === String(id || '');
 
         if (!isGeneralAdmin && !isSameUser) {
@@ -798,7 +798,7 @@ const actualizarRolUsuario = async (req = require, res = response) => {
         }
 
         if (
-            ['ADMIN_ROL', 'ADMIN_GENERAL_ROL'].includes(usuarioObjetivo.rol) &&
+            ['ADMIN', 'DEV'].includes(usuarioObjetivo.rol) &&
             usuarioObjetivo.rol !== rol
         ) {
             const totalAdminsActivos = await Usuarios.countDocuments({
@@ -892,35 +892,35 @@ const actualizarRolGeneralUsuario = async (req = require, res = response) => {
         }
 
         const rolAnterior = usuarioObjetivo.rol;
-        const promotingToGeneralAdmin = rol === 'ADMIN_GENERAL_ROL';
-        const removingGeneralAdmin = rolAnterior === 'ADMIN_GENERAL_ROL' && rol !== 'ADMIN_GENERAL_ROL';
+        const promotingToGeneralAdmin = rol === 'DEV';
+        const removingGeneralAdmin = rolAnterior === 'DEV' && rol !== 'DEV';
 
         if (!promotingToGeneralAdmin && !removingGeneralAdmin) {
             return res.status(400).json({
                 ok: false,
-                error: 'Este endpoint solo gestiona asignacion o revocacion de ADMIN_GENERAL_ROL'
+                error: 'Este endpoint solo gestiona asignacion o revocacion de DEV'
             });
         }
 
         if (promotingToGeneralAdmin) {
-            if (rolAnterior !== 'ADMIN_ROL') {
+            if (rolAnterior !== 'ADMIN') {
                 return res.status(400).json({
                     ok: false,
-                    error: 'Solo un ADMIN_ROL puede promocionarse a ADMIN_GENERAL_ROL'
+                    error: 'Solo un ADMIN puede promocionarse a DEV'
                 });
             }
         }
 
         if (removingGeneralAdmin) {
             const totalGeneralAdminsActivos = await Usuarios.countDocuments({
-                rol: 'ADMIN_GENERAL_ROL',
+                rol: 'DEV',
                 estado: true,
             });
 
             if (totalGeneralAdminsActivos <= 1) {
                 return res.status(400).json({
                     ok: false,
-                    error: 'No puedes remover el ultimo ADMIN_GENERAL_ROL activo del sistema'
+                    error: 'No puedes remover el ultimo DEV activo del sistema'
                 });
             }
         }
@@ -946,8 +946,8 @@ const actualizarRolGeneralUsuario = async (req = require, res = response) => {
             targetUsuario: usuarioObjetivo._id,
             targetCorreo: usuarioObjetivo.correo || '',
             summary: promotingToGeneralAdmin
-                ? 'Asignacion de ADMIN_GENERAL_ROL'
-                : 'Revocacion de ADMIN_GENERAL_ROL',
+                ? 'Asignacion de DEV'
+                : 'Revocacion de DEV',
             metadata: {
                 rolAnterior,
                 rolNuevo: rol,
@@ -971,7 +971,7 @@ const actualizarDocumentosIdentidadUsuario = async (req = require, res = respons
     try {
         const { id } = req.params;
         const actorId = String(req.usuarioAuth?._id || '');
-        const isGeneralAdmin = req.usuarioAuth?.rol === 'ADMIN_GENERAL_ROL';
+        const isGeneralAdmin = req.usuarioAuth?.rol === 'DEV';
         const isSelf = actorId === String(id);
 
         if (!isGeneralAdmin && !isSelf) {
@@ -1128,10 +1128,10 @@ const actualizarVerificacionIdentidadUsuario = async (req = require, res = respo
             });
         }
 
-        if (usuario.rol !== 'USER_ROL') {
+        if (usuario.rol !== 'USER') {
             return res.status(400).json({
                 ok: false,
-                error: 'Solo los usuarios con USER_ROL pueden pasar por este flujo'
+                error: 'Solo los usuarios con USER pueden pasar por este flujo'
             });
         }
 
@@ -1174,8 +1174,8 @@ const actualizarVerificacionIdentidadUsuario = async (req = require, res = respo
             targetUsuario: usuario._id,
             targetCorreo: usuario.correo || '',
             summary: estado === 'aprobada'
-                ? 'Identidad validada por ADMIN_GENERAL_ROL'
-                : 'Identidad rechazada por ADMIN_GENERAL_ROL',
+                ? 'Identidad validada por DEV'
+                : 'Identidad rechazada por DEV',
             metadata: {
                 observaciones: reviewNotes,
             },

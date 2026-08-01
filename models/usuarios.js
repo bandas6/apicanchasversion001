@@ -125,7 +125,7 @@ const UsuarioSchema = new Schema({
     },
     rol: {
         type: String,
-        default: 'USER_ROL',
+        default: 'USER',
     },
     diasYHoras: diasYHorasSchema,
     estado: {

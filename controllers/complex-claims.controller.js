@@ -81,7 +81,7 @@ const crearReclamoComplejo = async (req = request, res = response) => {
         const { id } = req.params;
         const usuarioAuth = req.usuarioAuth;
 
-        if (usuarioAuth?.rol === 'ADMIN_GENERAL_ROL') {
+        if (usuarioAuth?.rol === 'DEV') {
             return res.status(403).json({
                 ok: false,
                 error: 'El administrador general no necesita reclamar complejos',
@@ -280,8 +280,8 @@ const revisarReclamoComplejo = async (req = request, res = response) => {
             complejo.reclamadoAt = new Date();
 
             solicitante.complejo = complejo._id;
-            if (solicitante.rol === 'USER_ROL') {
-                solicitante.rol = 'ADMIN_ROL';
+            if (solicitante.rol === 'USER') {
+                solicitante.rol = 'ADMIN';
                 solicitante.refreshTokenHash = '';
 
                 await RoleChangeAudit.create({

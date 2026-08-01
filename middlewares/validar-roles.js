@@ -5,7 +5,7 @@ const Cancha = require('../models/canchas');
 const Equipo = require('../models/equipos');
 const Reserva = require('../models/reservas');
 
-const ADMIN_ROLES = ['ADMIN_ROL', 'ADMIN_GENERAL_ROL'];
+const ADMIN_ROLES = ['ADMIN', 'DEV'];
 
 const tieneRol = (usuario, rolesPermitidos = []) => {
     const rol = usuario?.rol || '';
@@ -20,10 +20,10 @@ const esAdminGeneralRol = (req, res = response, next) => {
         });
     }
 
-    if (!tieneRol(req.usuarioAuth, ['ADMIN_GENERAL_ROL'])) {
+    if (!tieneRol(req.usuarioAuth, ['DEV'])) {
         return res.status(403).json({
             ok: false,
-            msg: 'Esta ruta requiere ADMIN_GENERAL_ROL'
+            msg: 'Esta ruta requiere DEV'
         });
     }
 
@@ -104,7 +104,7 @@ const puedeGestionarComplejo = async (req, res = response, next) => {
         });
     }
 
-    if (tieneRol(req.usuarioAuth, ['ADMIN_GENERAL_ROL']) || !req.params.id) {
+    if (tieneRol(req.usuarioAuth, ['DEV']) || !req.params.id) {
         return next();
     }
 
@@ -135,7 +135,7 @@ const puedeGestionarCancha = async (req, res = response, next) => {
         });
     }
 
-    if (tieneRol(req.usuarioAuth, ['ADMIN_GENERAL_ROL'])) {
+    if (tieneRol(req.usuarioAuth, ['DEV'])) {
         return next();
     }
 
@@ -203,7 +203,7 @@ const puedeGestionarReserva = async (req, res = response, next) => {
         });
     }
 
-    if (tieneRol(req.usuarioAuth, ['ADMIN_GENERAL_ROL']) || !req.params.id) {
+    if (tieneRol(req.usuarioAuth, ['DEV']) || !req.params.id) {
         return next();
     }
 
@@ -313,7 +313,7 @@ const puedeGestionarSolicitudesComplejo = async (req, res = response, next) => {
         });
     }
 
-    if (tieneRol(req.usuarioAuth, ['ADMIN_GENERAL_ROL'])) {
+    if (tieneRol(req.usuarioAuth, ['DEV'])) {
         return next();
     }
 

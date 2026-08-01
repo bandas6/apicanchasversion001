@@ -10,7 +10,7 @@ const auditAdminGeneralAction = async ({
     summary = '',
     metadata = {},
 }) => {
-    if (req?.usuarioAuth?.rol !== 'ADMIN_GENERAL_ROL') {
+    if (req?.usuarioAuth?.rol !== 'DEV') {
         return;
     }
 
