@@ -19,29 +19,12 @@ const SYSTEM_ROLES = [
     },
 ];
 
-const ROLE_ALIASES = {
-    USER_ROL: 'USER',
-    user_rol: 'USER',
-    USER: 'USER',
-    user: 'USER',
-    ADMIN_ROL: 'ADMIN',
-    admin_rol: 'ADMIN',
-    ADMIN_USER_ROL: 'ADMIN',
-    admin_user_rol: 'ADMIN',
-    ADMIN: 'ADMIN',
-    admin: 'ADMIN',
-    ADMIN_GENERAL_ROL: 'DEV',
-    admin_general_rol: 'DEV',
-    DEV: 'DEV',
-    dev: 'DEV',
-};
-
 const normalizeRoleCode = (value = '') => {
     const raw = String(value || '').trim();
     if (!raw) {
         return '';
     }
-    return ROLE_ALIASES[raw] || raw.toUpperCase();
+    return raw.toUpperCase();
 };
 
 const ensureSystemRoles = async () => {
@@ -143,13 +126,14 @@ const ensureSystemRoles = async () => {
 
     const usuarios = await Usuarios.find({
         rol: {
-            $in: Object.keys(ROLE_ALIASES),
+            $nin: SYSTEM_ROLES.map((item) => item.rol),
         },
     }).select('_id rol');
 
+    const systemRoleCodes = SYSTEM_ROLES.map((item) => item.rol);
     for (const usuario of usuarios) {
         const normalizedRole = normalizeRoleCode(usuario.rol);
-        if (normalizedRole && normalizedRole !== usuario.rol) {
+        if (systemRoleCodes.includes(normalizedRole) && normalizedRole !== usuario.rol) {
             await Usuarios.updateOne(
                 { _id: usuario._id },
                 { $set: { rol: normalizedRole } }
