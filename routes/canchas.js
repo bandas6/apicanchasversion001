@@ -33,12 +33,6 @@ router.post('/', [
     check('complejo', 'No es un id valido').optional().isMongoId(),
     validarCampos,
     puedeGestionarCancha,
-    uploadMemory.fields([
-        { name: 'portada', maxCount: 1 },
-        { name: 'galeria', maxCount: 5 },
-    ]),
-    check('complejo', 'No es un id valido').isMongoId(),
-    validarCampos
 ], guardarCancha);
 
 router.put('/complejo/:id', [
@@ -50,7 +44,6 @@ router.put('/complejo/:id', [
 
 router.put('/:id', [
     validarJWT,
-    puedeGestionarCancha,
     uploadMemory.fields([
         { name: 'portada', maxCount: 1 },
         { name: 'galeria', maxCount: 5 },
