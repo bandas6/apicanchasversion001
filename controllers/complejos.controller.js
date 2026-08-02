@@ -253,7 +253,7 @@ const buildCompactComplexSnapshot = (complejo = {}) => {
             minPrice = minPrice == null ? basePrice : Math.min(minPrice, basePrice);
         }
 
-        if (cancha?.activa !== false && cancha?.enMantenimiento !== true) {
+        if (cancha?.activa !== false) {
             availableCourts += 1;
         }
     }
@@ -350,7 +350,7 @@ const hasTimeConflict = ({ startA, endA, startB, endB }) => (
 );
 
 const hasAvailableSlotsToday = ({ cancha, reservas = [], now = new Date() }) => {
-    if (!cancha || cancha.activa === false || cancha.enMantenimiento === true) {
+    if (!cancha || cancha.activa === false) {
         return false;
     }
 
@@ -691,7 +691,6 @@ const eliminarComplejo = async (req = request, res = response) => {
                 $set: {
                     eliminado: true,
                     activa: false,
-                    enMantenimiento: false,
                 },
             },
         );
@@ -767,7 +766,6 @@ const obtenerComplejos = async (req = request, res = response) => {
                         'precioHora',
                         'precioHoraBase',
                         'activa',
-                        'enMantenimiento',
                         'tarifas',
                         'tarifasEspeciales',
                         'disponibilidadSemanal',

@@ -416,9 +416,6 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
         if (cancha.activa === false) {
             disponible = false;
             motivo = 'cancha_inactiva';
-        } else if (cancha.enMantenimiento === true) {
-            disponible = false;
-            motivo = 'mantenimiento';
         } else if (!identityApproved) {
             disponible = false;
             motivo = 'identidad_no_aprobada';

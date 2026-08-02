@@ -146,10 +146,6 @@ const normalizeCanchaPayload = (payload = {}) => {
         normalized.activa = normalized.activa === 'true';
     }
 
-    if (typeof normalized.enMantenimiento === 'string') {
-        normalized.enMantenimiento = normalized.enMantenimiento === 'true';
-    }
-
     if (normalized.capacidad !== undefined && normalized.capacidad !== '') {
         normalized.capacidad = Number(normalized.capacidad);
     }
@@ -694,10 +690,6 @@ const normalizarPayloadCancha = (payload = {}) => {
         data.activa = normalizeBooleanField(data.activa, true);
     }
 
-    if ('enMantenimiento' in data) {
-        data.enMantenimiento = normalizeBooleanField(data.enMantenimiento, false);
-    }
-
     delete data.complejoId;
     delete data.tarifasJson;
     delete data.tarifasEspecialesJson;
@@ -804,7 +796,6 @@ const guardarCancha = async (req = request, res = response) => {
         data.disponibilidadSemanal = disponibilidadSemanal;
         data.bloquesNoDisponibles = bloquesNoDisponibles;
         data.activa = 'activa' in data ? data.activa : true;
-        data.enMantenimiento = 'enMantenimiento' in data ? data.enMantenimiento : false;
         Object.assign(data, reservationConfig);
         delete data.imagenesActuales;
 
