@@ -28,6 +28,7 @@ class Server {
             pistasHome: '/api/pistas-home',
             centroMensajes: '/api/centro-mensajes',
             complexClaims: '/api/complex-claims',
+            solicitudesDeporte: '/api/solicitudes-deporte',
             reservas: '/api/reservas',
             historialReservas: '/api/historial-reservas',
             mensajes: '/api/mensajes',
@@ -76,6 +77,7 @@ class Server {
         this.app.use(this.paths.pistasHome, require('../routes/pistas-home'));
         this.app.use(this.paths.centroMensajes, require('../routes/centro-mensajes'));
         this.app.use(this.paths.complexClaims, require('../routes/complex-claims'));
+        this.app.use(this.paths.solicitudesDeporte, require('../routes/sport-requests'));
         this.app.use(this.paths.reservas, require('../routes/reservas'));
         this.app.use(this.paths.historialReservas, require('../routes/historial-reserva'));
         this.app.use(this.paths.mensajes, require('../routes/mensajes'));
