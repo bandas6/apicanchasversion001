@@ -1,5 +1,6 @@
 const { request, response } = require('express');
 const Deporte = require('../models/deportes');
+const Cancha = require('../models/canchas');
 const { auditAdminGeneralAction } = require('../helpers/audit-admin-general');
 
 const slugify = (value = '') => String(value)
@@ -8,6 +9,32 @@ const slugify = (value = '') => String(value)
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+
+// Cuenta cuantas canchas (de cualquier complejo, no solo de un administrador)
+// referencian cada deporte via `Cancha.deportes` (poblado por
+// `resolveDeporte` en canchas.controller.js al crear/editar una cancha). Se
+// excluyen las canchas con `eliminado: true` (soft-delete) porque ya no
+// cuentan como uso real. Este conteo es lo que decide en el front si un
+// deporte se puede borrar del catalogo global.
+const contarCanchasPorDeporte = async (deporteIds = []) => {
+    if (!deporteIds.length) {
+        return new Map();
+    }
+
+    const filas = await Cancha.aggregate([
+        {
+            $match: {
+                eliminado: { $ne: true },
+                deportes: { $in: deporteIds },
+            },
+        },
+        { $unwind: '$deportes' },
+        { $match: { deportes: { $in: deporteIds } } },
+        { $group: { _id: '$deportes', total: { $sum: 1 } } },
+    ]);
+
+    return new Map(filas.map((fila) => [String(fila._id), fila.total]));
+};
 
 const obtenerDeportes = async (req = request, res = response) => {
     const { desde = 0, limit = 100, activos } = req.query;
@@ -18,13 +45,23 @@ const obtenerDeportes = async (req = request, res = response) => {
     }
 
     try {
-        const [total, deportes] = await Promise.all([
+        const [total, deportesDocs] = await Promise.all([
             Deporte.countDocuments(query),
             Deporte.find(query)
                 .sort({ nombre: 1 })
                 .skip(Number(desde))
                 .limit(Number(limit)),
         ]);
+
+        const conteos = await contarCanchasPorDeporte(
+            deportesDocs.map((deporte) => deporte._id),
+        );
+
+        const deportes = deportesDocs.map((deporte) => {
+            const json = deporte.toJSON();
+            json.canchasEnUso = conteos.get(String(deporte._id)) || 0;
+            return json;
+        });
 
         return res.status(200).json({
             ok: true,
@@ -168,8 +205,55 @@ const actualizarDeporte = async (req = request, res = response) => {
     }
 };
 
+const eliminarDeporte = async (req = request, res = response) => {
+    const { id } = req.params;
+
+    try {
+        const deporte = await Deporte.findById(id);
+
+        if (!deporte) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Deporte no encontrado',
+            });
+        }
+
+        const conteos = await contarCanchasPorDeporte([deporte._id]);
+        const canchasEnUso = conteos.get(String(deporte._id)) || 0;
+
+        if (canchasEnUso > 0) {
+            return res.status(409).json({
+                ok: false,
+                error: `No se puede eliminar: ${canchasEnUso} cancha(s) todavia usan este deporte.`,
+                canchasEnUso,
+            });
+        }
+
+        await deporte.deleteOne();
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'DELETE_DEPORTE',
+            resourceType: 'deporte',
+            resourceId: deporte._id,
+            summary: `Deporte eliminado: ${deporte.nombre}`.trim(),
+        });
+
+        return res.status(200).json({
+            ok: true,
+            deporteId: id,
+        });
+    } catch (error) {
+        return res.status(400).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     obtenerDeportes,
     crearDeporte,
     actualizarDeporte,
+    eliminarDeporte,
 };
