@@ -325,21 +325,6 @@ const parseHourToMinutes = (value = '') => {
     return (Number(hour) * 60) + Number(minute);
 };
 
-const buildReservaEndDate = ({ fecha, horaFin }) => {
-    if (!fecha) {
-        return null;
-    }
-
-    const base = new Date(fecha);
-    if (Number.isNaN(base.getTime())) {
-        return null;
-    }
-
-    const [hour = '0', minute = '0'] = String(horaFin || '').split(':');
-    base.setHours(Number(hour) || 0, Number(minute) || 0, 0, 0);
-    return base;
-};
-
 const getDayOfWeek = (date) => {
     const jsDay = new Date(date).getDay();
     return jsDay === 0 ? 7 : jsDay;
@@ -652,64 +637,41 @@ const eliminarComplejo = async (req = request, res = response) => {
             });
         }
 
-        const now = new Date();
-        const startOfDay = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate(),
-        );
-        const reservasActivas = await Reservas.find({
-            complejo: id,
-            fecha: { $gte: startOfDay },
-            estado: { $in: ['pendiente', 'confirmada', 'pendiente_cierre'] },
-        }).select('fecha horaInicio horaFin estado');
+        const canchaIds = await Canchas.find({ complejo: id }).distinct('_id');
 
-        const tieneReservasFuturasActivas = reservasActivas.some((item) => {
-            const endDate = buildReservaEndDate({
-                fecha: item.fecha,
-                horaFin: item.horaFin,
-            });
-            return endDate != null && endDate > now;
+        const tieneReservas = await Reservas.exists({
+            $or: [
+                { complejo: id },
+                { cancha: { $in: canchaIds } },
+            ],
         });
 
-        if (tieneReservasFuturasActivas) {
+        if (tieneReservas) {
             return res.status(409).json({
                 ok: false,
-                error: 'No puedes eliminar este complejo porque tiene reservas futuras activas. Revisa o cancela esas reservas antes de continuar.',
+                error: 'No puedes eliminar este complejo porque tiene reservas asociadas (incluye historicas). Revisa el historial antes de continuar.',
             });
         }
 
-        await Complejos.findByIdAndUpdate(
-            id,
-            { estado: false },
-            { new: true },
-        );
+        const canchasEliminadas = await Canchas.deleteMany({ complejo: id });
 
-        const canchasActualizadas = await Canchas.updateMany(
-            { complejo: id, eliminado: false },
-            {
-                $set: {
-                    eliminado: true,
-                    activa: false,
-                },
-            },
-        );
+        await Complejos.findByIdAndDelete(id);
 
         await auditAdminGeneralAction({
             req,
             action: 'DELETE_COMPLEJO',
             resourceType: 'complejo',
             resourceId: complejo._id,
-            summary: `Complejo desactivado: ${complejo.nombre || ''}`.trim(),
+            summary: `Complejo eliminado: ${complejo.nombre || ''}`.trim(),
             metadata: {
-                canchasAfectadas: canchasActualizadas.modifiedCount ?? 0,
+                canchasAfectadas: canchasEliminadas.deletedCount ?? 0,
             },
         });
 
         return res.status(200).json({
             ok: true,
             complejoId: id,
-            canchasAfectadas: canchasActualizadas.modifiedCount ?? 0,
+            canchasAfectadas: canchasEliminadas.deletedCount ?? 0,
         });
     } catch (error) {
         return res.status(500).json({
