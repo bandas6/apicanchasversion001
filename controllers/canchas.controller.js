@@ -2,6 +2,7 @@ const { request, response } = require("express");
 const Canchas = require("../models/canchas");
 const Complejos = require("../models/complejos");
 const Deporte = require("../models/deportes");
+const Reservas = require("../models/reservas");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const { uploadBufferToCloudinary } = require("../helpers/cloudinary");
 require("../models/deportes");
@@ -1172,16 +1173,29 @@ const eliminarCancha = async (req = request, res = response) => {
     const { id } = req.params;
 
     try {
-        const canchaEliminada = await Canchas.findByIdAndUpdate(
-            id,
-            { eliminado: true, activa: false },
-            { new: true }
-        );
+        const cancha = await Canchas.findById(id);
 
-        if (!canchaEliminada) {
+        if (!cancha) {
             return res.status(404).json({
                 ok: false,
                 msg: 'Cancha no encontrada'
+            });
+        }
+
+        const tieneReservas = await Reservas.exists({ cancha: id });
+
+        if (tieneReservas) {
+            return res.status(409).json({
+                ok: false,
+                error: 'No puedes eliminar esta cancha porque tiene reservas asociadas.'
+            });
+        }
+
+        await Canchas.findByIdAndDelete(id);
+
+        if (cancha.complejo) {
+            await Complejos.findByIdAndUpdate(cancha.complejo, {
+                $pull: { canchas: cancha._id }
             });
         }
 
@@ -1189,13 +1203,13 @@ const eliminarCancha = async (req = request, res = response) => {
             req,
             action: 'DELETE_CANCHA',
             resourceType: 'cancha',
-            resourceId: canchaEliminada._id,
-            summary: `Cancha desactivada: ${canchaEliminada.nombre || ''}`.trim(),
+            resourceId: cancha._id,
+            summary: `Cancha eliminada: ${cancha.nombre || ''}`.trim(),
         });
 
         return res.status(200).json({
             ok: true,
-            cancha: canchaEliminada
+            canchaId: id
         });
     } catch (error) {
         return res.status(500).json({
