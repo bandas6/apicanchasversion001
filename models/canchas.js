@@ -50,6 +50,15 @@ const TarifaHorarioSchema = new Schema({
         type: Boolean,
         default: true,
     },
+    // Nombre de la franja (ej. "Manana", "Noche") elegido por el admin en el
+    // panel. Antes no existia este campo: el frontend generaba/mostraba un
+    // nombre solo en memoria y se perdia en cada guardado/recarga porque no
+    // habia donde persistirlo.
+    etiqueta: {
+        type: String,
+        trim: true,
+        default: '',
+    },
 }, { _id: false });
 
 const TarifaEspecialSchema = new Schema({
@@ -78,6 +87,11 @@ const TarifaEspecialSchema = new Schema({
     activo: {
         type: Boolean,
         default: true,
+    },
+    etiqueta: {
+        type: String,
+        trim: true,
+        default: '',
     },
 }, { _id: false });
 
