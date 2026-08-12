@@ -1123,7 +1123,14 @@ const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
                     }
                     const franjaKey = resolveFranjaKey(slot.horaInicio);
                     franjas[franjaKey] += 1;
-                    horasMap.set(slot.horaInicio, (horasMap.get(slot.horaInicio) || 0) + 1);
+
+                    const entry = horasMap.get(slot.horaInicio) || { libres: 0, precioDesde: null };
+                    entry.libres += 1;
+                    const precio = Number(slot.precio);
+                    if (Number.isFinite(precio) && (entry.precioDesde === null || precio < entry.precioDesde)) {
+                        entry.precioDesde = precio;
+                    }
+                    horasMap.set(slot.horaInicio, entry);
 
                     if (!proximoTurnoLibre || slot.horaInicio < proximoTurnoLibre) {
                         proximoTurnoLibre = slot.horaInicio;
@@ -1132,7 +1139,7 @@ const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
             });
 
             const horas = Array.from(horasMap.entries())
-                .map(([hora, libres]) => ({ hora, libres }))
+                .map(([hora, { libres, precioDesde }]) => ({ hora, libres, precioDesde }))
                 .sort((a, b) => a.hora.localeCompare(b.hora));
 
             return {
