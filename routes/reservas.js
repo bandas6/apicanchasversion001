@@ -9,6 +9,7 @@ const {
     actualizarReserva,
     obtenerReservasCancha,
     obtenerDisponibilidadCancha,
+    obtenerDisponibilidadAgregada,
     obtenerMisReservas,
     cancelarMiReserva,
     cerrarReserva,
@@ -59,6 +60,12 @@ router.get('/disponibilidad/:id', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], obtenerDisponibilidadCancha);
+
+router.get('/disponibilidad-agregada', [
+    validarJWTOptional,
+    check('fecha', 'La fecha es obligatoria').notEmpty(),
+    validarCampos,
+], obtenerDisponibilidadAgregada);
 
 router.get('/:id',
     validarJWT,
