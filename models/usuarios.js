@@ -155,6 +155,15 @@ const UsuarioSchema = new Schema({
         platform: { type: String, trim: true, default: '' },
         updatedAt: { type: Date, default: Date.now },
     }],
+    avisosDisponibilidad: [{
+        dia: { type: Date, required: true },
+        franja: { type: String, trim: true, default: '' },
+        lat: { type: Number, required: true },
+        lng: { type: Number, required: true },
+        radioKm: { type: Number, min: 1, default: 4 },
+        estado: { type: String, trim: true, default: 'activo' },
+        createdAt: { type: Date, default: Date.now },
+    }],
     complejo: {
         type: Schema.Types.ObjectId,
         ref: 'Complejo',
