@@ -999,6 +999,174 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
     }
 }
 
+const FRANJA_BOUNDS = {
+    manana: { start: 6 * 60, end: 12 * 60 },
+    tarde: { start: 12 * 60, end: 18 * 60 },
+    noche: { start: 18 * 60, end: 24 * 60 },
+};
+
+const resolveFranjaKey = (horaInicio) => {
+    const minutes = parseHourToMinutes(horaInicio);
+    if (minutes >= FRANJA_BOUNDS.manana.start && minutes < FRANJA_BOUNDS.manana.end) {
+        return 'manana';
+    }
+    if (minutes >= FRANJA_BOUNDS.tarde.start && minutes < FRANJA_BOUNDS.tarde.end) {
+        return 'tarde';
+    }
+    return 'noche';
+};
+
+const CANCHA_SLOT_FIELDS = [
+    'nombre',
+    'tipoDeporte',
+    'activa',
+    'precioHora',
+    'precioHoraBase',
+    'tarifas',
+    'tarifasEspeciales',
+    'disponibilidadSemanal',
+    'bloquesNoDisponibles',
+    'duracionSlotMinutos',
+    'pasoSlotMinutos',
+    'reservaMinimaMinutos',
+    'reservaMaximaMinutos',
+].join(' ');
+
+// Turnos libres agregados por complejo, para el filtro de dia/franja de
+// Home (rol USER). Reusa buildAvailabilitySlots (misma logica que
+// obtenerDisponibilidadCancha) por cada cancha de cada complejo, agrupando
+// el resultado en baldes de franja (manana/tarde/noche), conteo por hora
+// exacta y el proximo turno libre del complejo.
+const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
+    const { fecha, complejoIds } = req.query;
+
+    try {
+        const targetDate = fecha ? new Date(fecha) : new Date();
+        if (Number.isNaN(targetDate.getTime())) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La fecha enviada no es valida',
+            });
+        }
+
+        const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
+
+        const complejoQuery = { estado: true };
+        const ids = String(complejoIds || '')
+            .split(',')
+            .map((item) => item.trim())
+            .filter(Boolean);
+        if (ids.length > 0) {
+            complejoQuery._id = { $in: ids };
+        }
+
+        const complejos = await Complejos.find(complejoQuery)
+            .select('canchas')
+            .populate('canchas', CANCHA_SLOT_FIELDS)
+            .lean();
+
+        const canchaIds = complejos
+            .flatMap((complejo) => (Array.isArray(complejo.canchas) ? complejo.canchas : []))
+            .map((cancha) => String(cancha?._id || ''))
+            .filter(Boolean);
+
+        if (canchaIds.length > 0) {
+            await syncReservationsForQuery({
+                cancha: { $in: canchaIds },
+                fecha: { $gte: startOfDay, $lt: endOfDay },
+            });
+        }
+
+        const reservas = canchaIds.length > 0
+            ? await Reservas.find({
+                cancha: { $in: canchaIds },
+                fecha: { $gte: startOfDay, $lt: endOfDay },
+                estado: 'confirmada',
+            }).select('cancha horaInicio horaFin estado')
+            : [];
+
+        const reservasByCancha = reservas.reduce((acc, reserva) => {
+            const canchaId = String(reserva.cancha || '');
+            if (!canchaId) {
+                return acc;
+            }
+            if (!acc[canchaId]) {
+                acc[canchaId] = [];
+            }
+            acc[canchaId].push(reserva);
+            return acc;
+        }, {});
+
+        // A diferencia de obtenerDisponibilidadCancha (donde identityApproved
+        // SI filtra, porque ese endpoint alimenta el flujo real de reserva),
+        // aca es siempre true: este endpoint solo cuenta turnos para que un
+        // usuario sin sesion o sin identidad verificada pueda explorar y
+        // filtrar Home con normalidad. El gate de identidad real se sigue
+        // aplicando cuando esa persona intenta reservar de verdad.
+        const identityApproved = true;
+
+        const resultado = complejos.map((complejo) => {
+            const canchas = Array.isArray(complejo.canchas) ? complejo.canchas : [];
+            const franjas = { manana: 0, tarde: 0, noche: 0 };
+            const horasMap = new Map();
+            let proximoTurnoLibre = null;
+
+            canchas.forEach((cancha) => {
+                const canchaId = String(cancha?._id || '');
+                const slots = buildAvailabilitySlots({
+                    cancha,
+                    fecha: targetDate,
+                    reservas: reservasByCancha[canchaId] || [],
+                    identityApproved,
+                });
+
+                slots.forEach((slot) => {
+                    if (!slot.disponible) {
+                        return;
+                    }
+                    const franjaKey = resolveFranjaKey(slot.horaInicio);
+                    franjas[franjaKey] += 1;
+
+                    const entry = horasMap.get(slot.horaInicio) || { libres: 0, precioDesde: null };
+                    entry.libres += 1;
+                    const precio = Number(slot.precio);
+                    if (Number.isFinite(precio) && (entry.precioDesde === null || precio < entry.precioDesde)) {
+                        entry.precioDesde = precio;
+                    }
+                    horasMap.set(slot.horaInicio, entry);
+
+                    if (!proximoTurnoLibre || slot.horaInicio < proximoTurnoLibre) {
+                        proximoTurnoLibre = slot.horaInicio;
+                    }
+                });
+            });
+
+            const horas = Array.from(horasMap.entries())
+                .map(([hora, { libres, precioDesde }]) => ({ hora, libres, precioDesde }))
+                .sort((a, b) => a.hora.localeCompare(b.hora));
+
+            return {
+                complejoId: String(complejo._id),
+                franjas,
+                horas,
+                proximoTurnoLibre,
+            };
+        });
+
+        return res.status(200).json({
+            ok: true,
+            fecha: startOfDay.toISOString(),
+            complejos: resultado,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 const obtenerReservas = async (req = request, res = response) => {
     const query = {};
     const { cancha, complejo, usuario, estado } = req.query;
@@ -1617,6 +1785,7 @@ module.exports = {
     obtenerReserva,
     obtenerReservasCancha,
     obtenerDisponibilidadCancha,
+    obtenerDisponibilidadAgregada,
     actualizarReserva,
     obtenerReservas,
     obtenerMisReservas,
