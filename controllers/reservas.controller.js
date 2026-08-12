@@ -684,6 +684,16 @@ const guardarReserva = async (req = request, res = response) => {
         await reserva.save();
         await refreshReservationPermissions(reserva);
 
+        try {
+            await cancelarAvisosPorReserva({
+                usuarioId: reserva.usuario,
+                fecha: reserva.fecha,
+                horaInicio: reserva.horaInicio,
+            });
+        } catch (avisoError) {
+            // No bloquea la creacion de la reserva si falla la limpieza de avisos.
+        }
+
         await auditAdminGeneralAction({
             req,
             action: 'CREATE_RESERVA',
@@ -1164,6 +1174,374 @@ const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
             ok: false,
             error: error.message,
         });
+    }
+};
+
+// --- Aviso de cupo (Home, "¿Te avisamos cuando se libere?") ---
+// El usuario pide que le avisen cuando se libere un turno cerca de el, en
+// un dia (y opcionalmente franja) dado. El aviso vive como subdocumento de
+// Usuarios (mismo patron que filtrosGuardados/devicePushTokens) porque su
+// evaluacion es siempre "para el usuario que pide", nunca cruzada entre
+// usuarios: no hace falta una coleccion propia ni un job en background.
+
+const MAX_AVISOS_ACTIVOS = 3;
+const MAX_DIAS_ANTICIPACION_AVISO = 6;
+const FRANJAS_AVISO_VALIDAS = ['manana', 'tarde', 'noche'];
+const EARTH_RADIUS_KM = 6371;
+
+const toRadians = (value) => (value * Math.PI) / 180;
+
+const haversineDistanceKm = (lat1, lng1, lat2, lng2) => {
+    const dLat = toRadians(lat2 - lat1);
+    const dLng = toRadians(lng2 - lng1);
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2;
+    return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const crearAvisoDisponibilidad = async (req = request, res = response) => {
+    try {
+        const usuarioId = req.usuarioAuth?._id;
+        if (!usuarioId) {
+            return res.status(401).json({
+                ok: false,
+                error: 'Debes iniciar sesion para crear un aviso',
+            });
+        }
+
+        const { dia, franja = '', lat, lng, radioKm = 4 } = req.body || {};
+
+        const parsedDia = dia ? new Date(dia) : null;
+        if (!parsedDia || Number.isNaN(parsedDia.getTime())) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes enviar un dia valido',
+            });
+        }
+
+        const normalizedDia = new Date(parsedDia.getFullYear(), parsedDia.getMonth(), parsedDia.getDate());
+        const today = new Date();
+        const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const maxAllowedDate = new Date(normalizedToday);
+        maxAllowedDate.setDate(maxAllowedDate.getDate() + MAX_DIAS_ANTICIPACION_AVISO);
+
+        if (normalizedDia.getTime() < normalizedToday.getTime()) {
+            return res.status(400).json({
+                ok: false,
+                error: 'No puedes crear un aviso para un dia que ya paso',
+            });
+        }
+
+        if (normalizedDia.getTime() > maxAllowedDate.getTime()) {
+            return res.status(400).json({
+                ok: false,
+                error: `Solo se pueden crear avisos hasta ${MAX_DIAS_ANTICIPACION_AVISO} dia(s) de anticipacion`,
+            });
+        }
+
+        const normalizedFranja = String(franja || '').trim();
+        if (normalizedFranja && !FRANJAS_AVISO_VALIDAS.includes(normalizedFranja)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'La franja enviada no es valida',
+            });
+        }
+
+        const parsedLat = Number(lat);
+        const parsedLng = Number(lng);
+        if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) {
+            return res.status(400).json({
+                ok: false,
+                error: 'Debes enviar una ubicacion valida',
+            });
+        }
+
+        const parsedRadio = Number(radioKm);
+        const normalizedRadio = Number.isFinite(parsedRadio) && parsedRadio > 0 ? parsedRadio : 4;
+
+        const usuario = await Usuarios.findById(usuarioId);
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado',
+            });
+        }
+
+        const activos = (usuario.avisosDisponibilidad || []).filter((item) => item.estado === 'activo');
+        if (activos.length >= MAX_AVISOS_ACTIVOS) {
+            return res.status(409).json({
+                ok: false,
+                error: `Ya tienes ${MAX_AVISOS_ACTIVOS} avisos activos. Borra uno para crear otro.`,
+            });
+        }
+
+        const yaExiste = activos.some((item) =>
+            new Date(item.dia).getTime() === normalizedDia.getTime() &&
+            String(item.franja || '') === normalizedFranja,
+        );
+        if (yaExiste) {
+            return res.status(409).json({
+                ok: false,
+                error: 'Ya tienes un aviso activo con ese dia y franja',
+            });
+        }
+
+        usuario.avisosDisponibilidad = [
+            ...(usuario.avisosDisponibilidad || []),
+            {
+                dia: normalizedDia,
+                franja: normalizedFranja,
+                lat: parsedLat,
+                lng: parsedLng,
+                radioKm: normalizedRadio,
+                estado: 'activo',
+                createdAt: new Date(),
+            },
+        ];
+        await usuario.save();
+
+        const creado = usuario.avisosDisponibilidad[usuario.avisosDisponibilidad.length - 1];
+
+        return res.status(201).json({
+            ok: true,
+            aviso: creado,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const obtenerMisAvisosDisponibilidad = async (req = request, res = response) => {
+    try {
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado',
+            });
+        }
+
+        const today = new Date();
+        const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+        const avisos = (usuario.avisosDisponibilidad || []).filter((item) =>
+            ['activo', 'notificado'].includes(item.estado) &&
+            new Date(item.dia).getTime() >= normalizedToday.getTime(),
+        );
+
+        return res.status(200).json({
+            ok: true,
+            avisos,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const eliminarAvisoDisponibilidad = async (req = request, res = response) => {
+    try {
+        const { avisoId } = req.params;
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado',
+            });
+        }
+
+        usuario.avisosDisponibilidad = (usuario.avisosDisponibilidad || []).filter(
+            (item) => String(item._id) !== String(avisoId || ''),
+        );
+        await usuario.save();
+
+        return res.status(200).json({
+            ok: true,
+            avisos: usuario.avisosDisponibilidad,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+// Evalua los avisos activos del usuario contra la disponibilidad real (misma
+// logica que obtenerDisponibilidadAgregada) y marca como 'notificado' los que
+// ya tienen cupo. No dispara push: el cliente llama esto al abrir/reanudar la
+// app y usa la respuesta para mostrar una notificacion local (ver
+// docs/viabilidad-aviso-cupo.md, V2 — no hay infraestructura de push real).
+const obtenerEstadoAvisosDisponibilidad = async (req = request, res = response) => {
+    try {
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+        if (!usuario) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Usuario no encontrado',
+            });
+        }
+
+        const today = new Date();
+        const normalizedToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+        const avisosActivos = (usuario.avisosDisponibilidad || []).filter((item) =>
+            item.estado === 'activo' && new Date(item.dia).getTime() >= normalizedToday.getTime(),
+        );
+
+        if (avisosActivos.length === 0) {
+            return res.status(200).json({
+                ok: true,
+                notificados: [],
+            });
+        }
+
+        const complejos = await Complejos.find({ estado: true })
+            .select('canchas ubicacionGeo')
+            .populate('canchas', CANCHA_SLOT_FIELDS)
+            .lean();
+
+        const notificados = [];
+
+        for (const aviso of avisosActivos) {
+            const complejosEnRadio = complejos.filter((complejo) => {
+                const lat = Number(complejo.ubicacionGeo?.lat);
+                const lng = Number(complejo.ubicacionGeo?.lng);
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                    return false;
+                }
+                return haversineDistanceKm(aviso.lat, aviso.lng, lat, lng) <= (aviso.radioKm || 4);
+            });
+
+            const canchaIds = complejosEnRadio
+                .flatMap((complejo) => (Array.isArray(complejo.canchas) ? complejo.canchas : []))
+                .map((cancha) => String(cancha?._id || ''))
+                .filter(Boolean);
+
+            if (canchaIds.length === 0) {
+                continue;
+            }
+
+            const targetDate = new Date(aviso.dia);
+            const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+            const endOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
+
+            await syncReservationsForQuery({
+                cancha: { $in: canchaIds },
+                fecha: { $gte: startOfDay, $lt: endOfDay },
+            });
+
+            const reservas = await Reservas.find({
+                cancha: { $in: canchaIds },
+                fecha: { $gte: startOfDay, $lt: endOfDay },
+                estado: 'confirmada',
+            }).select('cancha horaInicio horaFin');
+
+            const reservasByCancha = reservas.reduce((acc, reserva) => {
+                const canchaId = String(reserva.cancha || '');
+                if (!canchaId) {
+                    return acc;
+                }
+                acc[canchaId] = acc[canchaId] || [];
+                acc[canchaId].push(reserva);
+                return acc;
+            }, {});
+
+            const hayCupo = complejosEnRadio.some((complejo) => {
+                const canchas = Array.isArray(complejo.canchas) ? complejo.canchas : [];
+                return canchas.some((cancha) => {
+                    const canchaId = String(cancha?._id || '');
+                    const slots = buildAvailabilitySlots({
+                        cancha,
+                        fecha: targetDate,
+                        reservas: reservasByCancha[canchaId] || [],
+                        identityApproved: true,
+                    });
+                    return slots.some((slot) => {
+                        if (!slot.disponible) {
+                            return false;
+                        }
+                        if (!aviso.franja) {
+                            return true;
+                        }
+                        return resolveFranjaKey(slot.horaInicio) === aviso.franja;
+                    });
+                });
+            });
+
+            if (hayCupo) {
+                aviso.estado = 'notificado';
+                notificados.push({
+                    id: String(aviso._id),
+                    dia: aviso.dia,
+                    franja: aviso.franja || null,
+                });
+            }
+        }
+
+        if (notificados.length > 0) {
+            await usuario.save();
+        }
+
+        return res.status(200).json({
+            ok: true,
+            notificados,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
+const cancelarAvisosPorReserva = async ({ usuarioId, fecha, horaInicio }) => {
+    if (!usuarioId) {
+        return;
+    }
+
+    const usuario = await Usuarios.findById(usuarioId);
+    if (!usuario || !Array.isArray(usuario.avisosDisponibilidad) || usuario.avisosDisponibilidad.length === 0) {
+        return;
+    }
+
+    const reservaDate = new Date(fecha);
+    const normalizedReservaDia = new Date(
+        reservaDate.getFullYear(),
+        reservaDate.getMonth(),
+        reservaDate.getDate(),
+    ).getTime();
+    const franjaReserva = resolveFranjaKey(horaInicio);
+
+    let changed = false;
+    usuario.avisosDisponibilidad.forEach((aviso) => {
+        if (!['activo', 'notificado'].includes(aviso.estado)) {
+            return;
+        }
+        const avisoDia = new Date(aviso.dia);
+        const normalizedAvisoDia = new Date(
+            avisoDia.getFullYear(),
+            avisoDia.getMonth(),
+            avisoDia.getDate(),
+        ).getTime();
+        if (normalizedAvisoDia !== normalizedReservaDia) {
+            return;
+        }
+        if (aviso.franja && aviso.franja !== franjaReserva) {
+            return;
+        }
+        aviso.estado = 'convertido';
+        changed = true;
+    });
+
+    if (changed) {
+        await usuario.save();
     }
 };
 
@@ -1798,4 +2176,8 @@ module.exports = {
     repetirReserva,
     crearWaitlistReserva,
     obtenerMiWaitlist,
+    crearAvisoDisponibilidad,
+    obtenerMisAvisosDisponibilidad,
+    obtenerEstadoAvisosDisponibilidad,
+    eliminarAvisoDisponibilidad,
 }

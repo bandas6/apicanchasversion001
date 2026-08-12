@@ -20,6 +20,10 @@ const {
     repetirReserva,
     crearWaitlistReserva,
     obtenerMiWaitlist,
+    crearAvisoDisponibilidad,
+    obtenerMisAvisosDisponibilidad,
+    obtenerEstadoAvisosDisponibilidad,
+    eliminarAvisoDisponibilidad,
 } = require("../controllers/reservas.controller");
 const {
     esAdminRol,
@@ -66,6 +70,30 @@ router.get('/disponibilidad-agregada', [
     check('fecha', 'La fecha es obligatoria').notEmpty(),
     validarCampos,
 ], obtenerDisponibilidadAgregada);
+
+router.get('/avisos-disponibilidad', [
+    validarJWT,
+    validarCampos,
+], obtenerMisAvisosDisponibilidad);
+
+router.get('/avisos-disponibilidad/estado', [
+    validarJWT,
+    validarCampos,
+], obtenerEstadoAvisosDisponibilidad);
+
+router.post('/avisos-disponibilidad', [
+    validarJWT,
+    check('dia', 'El dia es obligatorio').notEmpty(),
+    check('lat', 'La latitud es obligatoria').notEmpty(),
+    check('lng', 'La longitud es obligatoria').notEmpty(),
+    validarCampos,
+], crearAvisoDisponibilidad);
+
+router.delete('/avisos-disponibilidad/:avisoId', [
+    validarJWT,
+    check('avisoId', 'No es un id valido').isMongoId(),
+    validarCampos,
+], eliminarAvisoDisponibilidad);
 
 router.get('/:id',
     validarJWT,
