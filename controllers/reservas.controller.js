@@ -1098,9 +1098,13 @@ const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
             return acc;
         }, {});
 
-        const identityApproved = req.usuarioAuth?.rol && req.usuarioAuth.rol !== 'USER'
-            ? true
-            : req.usuarioAuth?.identidadEstado === 'aprobada';
+        // A diferencia de obtenerDisponibilidadCancha (donde identityApproved
+        // SI filtra, porque ese endpoint alimenta el flujo real de reserva),
+        // aca es siempre true: este endpoint solo cuenta turnos para que un
+        // usuario sin sesion o sin identidad verificada pueda explorar y
+        // filtrar Home con normalidad. El gate de identidad real se sigue
+        // aplicando cuando esa persona intenta reservar de verdad.
+        const identityApproved = true;
 
         const resultado = complejos.map((complejo) => {
             const canchas = Array.isArray(complejo.canchas) ? complejo.canchas : [];
