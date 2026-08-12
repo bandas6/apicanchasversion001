@@ -563,6 +563,7 @@ const expandTarifasEspeciales = (tarifasEspeciales = []) => {
                 precio: Number(tarifa?.precio || 0),
                 moneda: tarifa?.moneda || 'COP',
                 activo: tarifa?.activo !== false,
+                etiqueta: String(tarifa?.etiqueta || '').trim(),
             });
         }
     }
