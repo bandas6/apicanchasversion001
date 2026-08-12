@@ -141,6 +141,36 @@ const normalizarPayloadComplejo = (data = {}) => {
             .filter(Boolean);
     }
 
+    // horarioAtencion llega como JSON string (horarioAtencionJson) cuando el
+    // request es multipart (hay portada de por medio) y como array directo
+    // en el resto de los casos — mismo patron que imagenesActualesJson arriba
+    // y que disponibilidadSemanalJson/tarifasJson en canchas.controller.js.
+    let horarioAtencionRaw = payload.horarioAtencion;
+    if (typeof payload.horarioAtencionJson === 'string') {
+        try {
+            horarioAtencionRaw = JSON.parse(payload.horarioAtencionJson);
+        } catch (_) {
+            horarioAtencionRaw = undefined;
+        }
+    }
+    if (Array.isArray(horarioAtencionRaw)) {
+        payload.horarioAtencion = horarioAtencionRaw
+            .map((item) => ({
+                diaSemana: Number(item?.diaSemana),
+                horaInicio: String(item?.horaInicio || '').trim(),
+                horaFin: String(item?.horaFin || '').trim(),
+                activo: item?.activo !== false,
+            }))
+            .filter((item) => (
+                Number.isInteger(item.diaSemana) &&
+                item.diaSemana >= 1 &&
+                item.diaSemana <= 7 &&
+                item.horaInicio &&
+                item.horaFin
+            ));
+    }
+    delete payload.horarioAtencionJson;
+
     return payload;
 };
 
