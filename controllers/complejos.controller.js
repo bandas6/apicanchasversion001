@@ -622,6 +622,76 @@ const actualizarComplejo = async (req = request, res = response) => {
     }
 };
 
+const normalizeEstadoField = (value, fallback) => {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    if (typeof value === 'number') {
+        return value !== 0;
+    }
+
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'si', 'sí'].includes(normalized)) {
+            return true;
+        }
+        if (['false', '0', 'no'].includes(normalized)) {
+            return false;
+        }
+    }
+
+    return fallback;
+};
+
+// Endpoint liviano para activar/desactivar una sede (equivalente a
+// `actualizarEstadoCancha` en canchas): a diferencia de `actualizarComplejo`
+// (PUT /:id), este NO exige el payload completo del formulario
+// (`validateComplejoPayload` rechaza cualquier request sin nombre,
+// direccion, telefono, etc.), asi que un simple toggle de estado desde la
+// tarjeta de la lista no puede reusar esa ruta.
+const actualizarEstadoComplejo = async (req = request, res = response) => {
+    const { id } = req.params;
+    const estado = normalizeEstadoField(req.body.estado, true);
+
+    try {
+        const complejo = await Complejos.findByIdAndUpdate(
+            id,
+            { $set: { estado } },
+            { new: true },
+        )
+            .populate('administrador')
+            .populate('administradores')
+            .populate('deportes')
+            .populate('canchas');
+
+        if (!complejo) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Complejo no encontrado',
+            });
+        }
+
+        await auditAdminGeneralAction({
+            req,
+            action: 'UPDATE_COMPLEJO_ESTADO',
+            resourceType: 'complejo',
+            resourceId: complejo._id,
+            summary: `Complejo ${estado ? 'activado' : 'desactivado'}: ${complejo.nombre || ''}`.trim(),
+        });
+
+        return res.status(200).json({
+            ok: true,
+            complejo,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 const validateComplejoPayload = ({ data = {}, requireCover = false, hasCoverFile = false }) => {
     const nombre = String(data.nombre || '').trim();
     const descripcion = String(data.descripcion || '').trim();
@@ -751,7 +821,17 @@ const eliminarComplejo = async (req = request, res = response) => {
 
 const obtenerComplejos = async (req = request, res = response) => {
     const { desde = 0, limit = 20, administrador, view, q } = req.query;
-    const query = { estado: true };
+    // Sin `administrador` (listado publico) solo se muestran sedes activas.
+    // Con `administrador` se listan todas (incluidas las desactivadas) SOLO
+    // si quien pide es ese mismo admin autenticado (o un DEV) — asi el
+    // dueño no pierde su sede desactivada de su propio panel, sin abrir un
+    // hueco donde cualquiera sin sesion vea sedes ocultas de otro admin
+    // pasando `?administrador=<id>` a mano.
+    const requesterId = String(req.usuarioAuth?._id || '');
+    const requesterEsDev = req.usuarioAuth?.rol === 'DEV';
+    const puedeVerInactivas = Boolean(administrador) &&
+        (requesterEsDev || (requesterId && requesterId === String(administrador)));
+    const query = puedeVerInactivas ? {} : { estado: true };
     const summaryView = isSummaryViewRequested(view);
     const searchRegex = String(q || '').trim();
 
@@ -873,6 +953,31 @@ const obtenerCanchasPorComplejo = async (req = request, res = response) => {
     const { id } = req.params;
 
     try {
+        const complejo = await Complejos.findById(id).select('estado administrador administradores');
+
+        // Sede desactivada: sus canchas no deben quedar visibles para el
+        // publico, salvo para el propio admin dueño (o un DEV) que necesita
+        // seguir viendolas para poder reactivar la sede.
+        if (complejo && complejo.estado === false) {
+            const requesterId = String(req.usuarioAuth?._id || '');
+            const requesterEsDev = req.usuarioAuth?.rol === 'DEV';
+            const administradorId = String(complejo.administrador || '');
+            const administradoresIds = (complejo.administradores || [])
+                .map((item) => String(item));
+            const esDueño = requesterId && (
+                administradorId === requesterId ||
+                administradoresIds.includes(requesterId)
+            );
+
+            if (!requesterEsDev && !esDueño) {
+                return res.status(200).json({
+                    ok: true,
+                    total: 0,
+                    canchas: [],
+                });
+            }
+        }
+
         const canchas = await Canchas.find({
             complejo: id,
             eliminado: false,
@@ -1017,6 +1122,7 @@ module.exports = {
     obtenerComplejo,
     obtenerCanchasPorComplejo,
     actualizarComplejo,
+    actualizarEstadoComplejo,
     eliminarComplejo,
     obtenerReviewsComplejo,
     reportarReviewComplejo,
