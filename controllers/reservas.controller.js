@@ -351,7 +351,7 @@ const buildUserReputationSummaryPayload = (usuario = {}) => {
     };
 };
 
-const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved = true }) => {
+const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identityApproved = true }) => {
     const diaSemana = getDayOfWeek(fecha);
     const tarifasEspeciales = Array.isArray(cancha.tarifasEspeciales) ? cancha.tarifasEspeciales : [];
     const slotConfig = resolveCanchaSlotConfig(cancha);
@@ -416,6 +416,9 @@ const buildAvailabilitySlots = ({ cancha, fecha, reservas = [], identityApproved
         if (cancha.activa === false) {
             disponible = false;
             motivo = 'cancha_inactiva';
+        } else if (complejo?.estado === false) {
+            disponible = false;
+            motivo = 'sede_inactiva';
         } else if (!identityApproved) {
             disponible = false;
             motivo = 'identidad_no_aprobada';
@@ -585,6 +588,16 @@ const guardarReserva = async (req = request, res = response) => {
             });
         }
 
+        const complejoReserva = data.complejo
+            ? await Complejos.findById(data.complejo)
+            : await Complejos.findById(cancha.complejo);
+        if (!complejoReserva) {
+            return res.status(404).json({
+                ok: false,
+                error: 'Complejo no encontrado'
+            });
+        }
+
         const reservasExistentes = await Reservas.find({
             cancha: data.cancha,
             fecha: {
@@ -596,6 +609,7 @@ const guardarReserva = async (req = request, res = response) => {
 
         const disponibilidadSlots = buildAvailabilitySlots({
             cancha,
+            complejo: complejoReserva,
             fecha: reservaDate,
             reservas: reservasExistentes,
             identityApproved: true,
@@ -616,18 +630,6 @@ const guardarReserva = async (req = request, res = response) => {
             return res.status(409).json({
                 ok: false,
                 error: 'El slot solicitado ya no esta disponible para esta cancha'
-            });
-        }
-
-        const complejo = data.complejo
-            ? await Complejos.findById(data.complejo)
-            : null;
-
-        const complejoReserva = complejo || await Complejos.findById(cancha.complejo);
-        if (!complejoReserva) {
-            return res.status(404).json({
-                ok: false,
-                error: 'Complejo no encontrado'
             });
         }
 
@@ -936,7 +938,7 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
     const { fecha } = req.query;
 
     try {
-        const cancha = await Canchas.findById(id);
+        const cancha = await Canchas.findById(id).populate('complejo');
 
         if (!cancha) {
             return res.status(404).json({
@@ -979,6 +981,7 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
 
         const franjas = buildAvailabilitySlots({
             cancha,
+            complejo: cancha.complejo,
             fecha: targetDate,
             reservas,
             identityApproved,

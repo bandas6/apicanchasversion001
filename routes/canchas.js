@@ -2,7 +2,7 @@ const { Router } = require("express");
 const { validarCampos } = require("../middlewares/validar-campos");
 const { uploadMemory } = require("../middlewares/upload-memory");
 const { check } = require("express-validator");
-const { validarJWT } = require("../middlewares/validar-jwt");
+const { validarJWT, validarJWTOptional } = require("../middlewares/validar-jwt");
 const {
     obtenerCancha,
     obtenerCanchas,
@@ -15,7 +15,7 @@ const { puedeGestionarCancha } = require("../middlewares/validar-roles");
 
 const router = Router();
 
-router.get('/', obtenerCanchas);
+router.get('/', validarJWTOptional, obtenerCanchas);
 
 router.get('/:id',
     validarJWT,
