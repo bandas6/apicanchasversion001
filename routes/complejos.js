@@ -10,6 +10,7 @@ const {
     obtenerComplejos,
     obtenerCanchasPorComplejo,
     actualizarComplejo,
+    actualizarEstadoComplejo,
     eliminarComplejo,
     obtenerReviewsComplejo,
     reportarReviewComplejo,
@@ -19,9 +20,10 @@ const { puedeGestionarComplejo, esAdminGeneralRol } = require("../middlewares/va
 
 const router = Router();
 
-router.get('/', obtenerComplejos);
+router.get('/', validarJWTOptional, obtenerComplejos);
 
 router.get('/:id/canchas',
+    validarJWTOptional,
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
     obtenerCanchasPorComplejo);
@@ -68,6 +70,14 @@ router.put('/:id', [
     ]),
     validarCampos
 ], actualizarComplejo);
+
+router.put('/:id/estado', [
+    validarJWT,
+    puedeGestionarComplejo,
+    check('id', 'No es un id valido').isMongoId(),
+    check('estado', 'El estado es obligatorio').exists(),
+    validarCampos,
+], actualizarEstadoComplejo);
 
 router.delete('/:id', [
     validarJWT,

@@ -1117,7 +1117,7 @@ const obtenerCanchas = async (req = request, res = response) => {
     }
 
     try {
-        const [total, canchas] = await Promise.all([
+        const [total, canchasRaw] = await Promise.all([
             Canchas.countDocuments(query),
             Canchas.find(query)
                 .skip(Number(desde))
@@ -1127,9 +1127,28 @@ const obtenerCanchas = async (req = request, res = response) => {
                 .populate('deportes')
         ]);
 
+        // Una cancha de una sede desactivada (complejo.estado === false) no
+        // debe quedar visible en la busqueda publica, pero el propio admin
+        // dueño (o un DEV) si debe poder seguir viendola en su panel para
+        // poder reactivarla — mismo criterio que ya se aplica en
+        // `obtenerComplejos` para el listado de sedes.
+        const requesterId = String(req.usuarioAuth?._id || '');
+        const requesterEsDev = req.usuarioAuth?.rol === 'DEV';
+        const canchas = canchasRaw.filter((cancha) => {
+            const complejoDoc = cancha.complejo;
+            if (!complejoDoc || complejoDoc.estado !== false) return true;
+            if (requesterEsDev) return true;
+            if (!requesterId) return false;
+            const administradorId = String(complejoDoc.administrador || '');
+            const administradoresIds = (complejoDoc.administradores || [])
+                .map((item) => String(item));
+            return administradorId === requesterId ||
+                administradoresIds.includes(requesterId);
+        });
+
         return res.status(200).json({
             ok: true,
-            total,
+            total: canchas.length,
             canchas
         });
     } catch (error) {
