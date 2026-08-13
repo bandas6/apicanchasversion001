@@ -1045,11 +1045,112 @@ const CANCHA_SLOT_FIELDS = [
     'reservaMaximaMinutos',
 ].join(' ');
 
+// Cuantos dias hacia adelante se busca "proximaDisponibilidad" cuando el
+// complejo no tiene ningun turno libre en la fecha consultada. Mismo orden
+// de magnitud que MAX_DIAS_ANTICIPACION_AVISO (aviso de cupo) pero separado
+// a proposito: son dos features distintas y no deberian quedar acopladas
+// por compartir una constante que despues cambie por otra razon.
+const MAX_DIAS_PROXIMA_DISPONIBILIDAD = 6;
+
+// Completa proximaDisponibilidad para los items de `resultado` que quedaron
+// sin proximoTurnoLibre en la fecha consultada. Busca dia por dia (hasta
+// MAX_DIAS_PROXIMA_DISPONIBILIDAD) el primer dia con al menos un slot
+// disponible, en cualquier cancha del complejo, y corta ahi. Trae las
+// reservas de toda la ventana en una sola consulta (no una por dia) para no
+// multiplicar el costo de red por complejo sin turnos hoy.
+const attachProximaDisponibilidad = async ({ resultado, complejos, startOfDay, identityApproved }) => {
+    const pendientes = resultado.filter((item) => !item.proximoTurnoLibre);
+    if (pendientes.length === 0) {
+        return;
+    }
+
+    const complejosPorId = new Map(complejos.map((complejo) => [String(complejo._id), complejo]));
+
+    const lookaheadStart = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), startOfDay.getDate() + 1);
+    const lookaheadEnd = new Date(
+        startOfDay.getFullYear(),
+        startOfDay.getMonth(),
+        startOfDay.getDate() + 1 + MAX_DIAS_PROXIMA_DISPONIBILIDAD,
+    );
+
+    const lookaheadCanchaIds = pendientes
+        .flatMap((item) => {
+            const canchas = complejosPorId.get(item.complejoId)?.canchas;
+            return Array.isArray(canchas) ? canchas : [];
+        })
+        .map((cancha) => String(cancha?._id || ''))
+        .filter(Boolean);
+
+    if (lookaheadCanchaIds.length === 0) {
+        return;
+    }
+
+    await syncReservationsForQuery({
+        cancha: { $in: lookaheadCanchaIds },
+        fecha: { $gte: lookaheadStart, $lt: lookaheadEnd },
+    });
+
+    const lookaheadReservas = await Reservas.find({
+        cancha: { $in: lookaheadCanchaIds },
+        fecha: { $gte: lookaheadStart, $lt: lookaheadEnd },
+        estado: 'confirmada',
+    }).select('cancha fecha horaInicio horaFin estado');
+
+    const reservasPorCanchaYDia = lookaheadReservas.reduce((acc, reserva) => {
+        const canchaId = String(reserva.cancha || '');
+        const diaKey = new Date(reserva.fecha.getFullYear(), reserva.fecha.getMonth(), reserva.fecha.getDate()).getTime();
+        const key = `${canchaId}::${diaKey}`;
+        if (!acc[key]) {
+            acc[key] = [];
+        }
+        acc[key].push(reserva);
+        return acc;
+    }, {});
+
+    for (const item of pendientes) {
+        const complejo = complejosPorId.get(item.complejoId);
+        const canchas = Array.isArray(complejo?.canchas) ? complejo.canchas : [];
+
+        for (let offset = 1; offset <= MAX_DIAS_PROXIMA_DISPONIBILIDAD; offset += 1) {
+            const dia = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), startOfDay.getDate() + offset);
+            const diaKey = dia.getTime();
+
+            let horaEncontrada = null;
+            for (const cancha of canchas) {
+                const canchaId = String(cancha?._id || '');
+                const reservasDia = reservasPorCanchaYDia[`${canchaId}::${diaKey}`] || [];
+                const slots = buildAvailabilitySlots({
+                    cancha,
+                    fecha: dia,
+                    reservas: reservasDia,
+                    identityApproved,
+                });
+                const primerLibre = slots.find((slot) => slot.disponible);
+                if (primerLibre && (!horaEncontrada || primerLibre.horaInicio < horaEncontrada)) {
+                    horaEncontrada = primerLibre.horaInicio;
+                }
+            }
+
+            if (horaEncontrada) {
+                item.proximaDisponibilidad = {
+                    fecha: dia.toISOString(),
+                    hora: horaEncontrada,
+                };
+                break;
+            }
+        }
+    }
+};
+
 // Turnos libres agregados por complejo, para el filtro de dia/franja de
 // Home (rol USER). Reusa buildAvailabilitySlots (misma logica que
 // obtenerDisponibilidadCancha) por cada cancha de cada complejo, agrupando
 // el resultado en baldes de franja (manana/tarde/noche), conteo por hora
-// exacta y el proximo turno libre del complejo.
+// exacta y el proximo turno libre del complejo. Si un complejo no tiene
+// nada libre en la fecha consultada, ademas busca hacia adelante (hasta
+// MAX_DIAS_PROXIMA_DISPONIBILIDAD dias) el primer dia con algo libre y lo
+// devuelve en proximaDisponibilidad — o null si no encuentra nada dentro de
+// esa ventana (Home no muestra ninguna fecha en ese caso, no adivina).
 const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
     const { fecha, complejoIds } = req.query;
 
@@ -1164,7 +1265,15 @@ const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
                 franjas,
                 horas,
                 proximoTurnoLibre,
+                proximaDisponibilidad: null,
             };
+        });
+
+        await attachProximaDisponibilidad({
+            resultado,
+            complejos,
+            startOfDay,
+            identityApproved,
         });
 
         return res.status(200).json({
