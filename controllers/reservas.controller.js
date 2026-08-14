@@ -406,6 +406,9 @@ const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identi
     const now = new Date();
     const isToday = sameCalendarDay(now, fecha);
     const currentMinutes = parseHourToMinutes(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+    const normalizedToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const normalizedFecha = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+    const isPastDate = normalizedFecha.getTime() < normalizedToday.getTime();
 
     return slots.map((slot) => {
         const startMinutes = parseHourToMinutes(slot.horaInicio);
@@ -422,6 +425,9 @@ const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identi
         } else if (!identityApproved) {
             disponible = false;
             motivo = 'identidad_no_aprobada';
+        } else if (isPastDate) {
+            disponible = false;
+            motivo = 'fecha_pasada';
         } else if (isToday && endMinutes <= currentMinutes) {
             disponible = false;
             motivo = 'horario_pasado';
@@ -598,6 +604,39 @@ const guardarReserva = async (req = request, res = response) => {
             });
         }
 
+        const normalizedReservationDate = new Date(
+            reservaDate.getFullYear(),
+            reservaDate.getMonth(),
+            reservaDate.getDate(),
+        );
+        const today = new Date();
+        const normalizedToday = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate(),
+        );
+
+        if (normalizedReservationDate.getTime() < normalizedToday.getTime()) {
+            return res.status(400).json({
+                ok: false,
+                error: 'No se puede reservar para una fecha que ya paso',
+            });
+        }
+
+        const maxDiasAnticipacionReserva = Math.max(
+            1,
+            Number(complejoReserva.maxDiasAnticipacionReserva || 7),
+        );
+        const maxAllowedDate = new Date(normalizedToday);
+        maxAllowedDate.setDate(maxAllowedDate.getDate() + maxDiasAnticipacionReserva);
+
+        if (normalizedReservationDate.getTime() > maxAllowedDate.getTime()) {
+            return res.status(400).json({
+                ok: false,
+                error: `Este complejo solo permite reservar hasta ${maxDiasAnticipacionReserva} dia(s) de anticipacion`,
+            });
+        }
+
         const reservasExistentes = await Reservas.find({
             cancha: data.cancha,
             fecha: {
@@ -630,31 +669,6 @@ const guardarReserva = async (req = request, res = response) => {
             return res.status(409).json({
                 ok: false,
                 error: 'El slot solicitado ya no esta disponible para esta cancha'
-            });
-        }
-
-        const normalizedReservationDate = new Date(
-            reservaDate.getFullYear(),
-            reservaDate.getMonth(),
-            reservaDate.getDate(),
-        );
-        const today = new Date();
-        const normalizedToday = new Date(
-            today.getFullYear(),
-            today.getMonth(),
-            today.getDate(),
-        );
-        const maxDiasAnticipacionReserva = Math.max(
-            1,
-            Number(complejoReserva.maxDiasAnticipacionReserva || 7),
-        );
-        const maxAllowedDate = new Date(normalizedToday);
-        maxAllowedDate.setDate(maxAllowedDate.getDate() + maxDiasAnticipacionReserva);
-
-        if (normalizedReservationDate.getTime() > maxAllowedDate.getTime()) {
-            return res.status(400).json({
-                ok: false,
-                error: `Este complejo solo permite reservar hasta ${maxDiasAnticipacionReserva} dia(s) de anticipacion`,
             });
         }
 
