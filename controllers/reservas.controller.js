@@ -40,6 +40,38 @@ const parseHourToMinutes = (value = '') => {
     return (Number(hour) * 60) + Number(minute);
 };
 
+// Parsea una fecha "de calendario" (tipicamente "YYYY-MM-DD", como la envia
+// el frontend) sin cruzar por UTC. `new Date('YYYY-MM-DD')` interpreta ese
+// string como medianoche UTC; si despues se lee con getters locales
+// (getFullYear/getMonth/getDate) en un servidor cuya zona horaria esta
+// detras de UTC (cualquier zona de America, incluida Colombia), el dia
+// leido queda UN DIA ANTES del que el cliente envio -- por ejemplo, "hoy"
+// se lee como "ayer" y termina tratandose como fecha pasada. Este helper
+// evita ese cruce construyendo directamente con el constructor local
+// (new Date(year, month, day)), que no depende de la zona horaria del
+// proceso para el DIA que representa.
+// Nunca lanza (mismo contrato que `new Date(x)`): un valor invalido devuelve
+// una Invalid Date (`.getTime()` es NaN), no null -- asi los `Number.isNaN`
+// que ya existian en cada call-site siguen funcionando sin cambios.
+const parseCalendarDate = (value) => {
+    if (value instanceof Date) {
+        return value;
+    }
+
+    const raw = String(value ?? '').trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+        const [, year, month, day] = match;
+        return new Date(Number(year), Number(month) - 1, Number(day));
+    }
+
+    // Fallback para formatos que no son "YYYY-MM-DD...": mismo
+    // comportamiento que antes tenia todo el archivo. Menos seguro ante el
+    // mismo cruce UTC/local si el valor viene sin hora, pero no rompe
+    // ningun caso que ya funcionara.
+    return new Date(raw);
+};
+
 const hasTimeConflict = ({ startA, endA, startB, endB }) => {
     return startA < endB && startB < endA;
 };
@@ -495,7 +527,7 @@ const guardarReserva = async (req = request, res = response) => {
         const startMinutes = parseHourToMinutes(data.horaInicio);
         const endMinutes = parseHourToMinutes(data.horaFin);
 
-        const reservaDate = new Date(data.fecha);
+        const reservaDate = parseCalendarDate(data.fecha);
         const startOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate());
         const endOfDay = new Date(reservaDate.getFullYear(), reservaDate.getMonth(), reservaDate.getDate() + 1);
 
@@ -971,7 +1003,7 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
             });
         }
 
-        const targetDate = fecha ? new Date(fecha) : new Date();
+        const targetDate = fecha ? parseCalendarDate(fecha) : new Date();
         if (Number.isNaN(targetDate.getTime())) {
             return res.status(400).json({
                 ok: false,
@@ -1169,7 +1201,7 @@ const obtenerDisponibilidadAgregada = async (req = request, res = response) => {
     const { fecha, complejoIds } = req.query;
 
     try {
-        const targetDate = fecha ? new Date(fecha) : new Date();
+        const targetDate = fecha ? parseCalendarDate(fecha) : new Date();
         if (Number.isNaN(targetDate.getTime())) {
             return res.status(400).json({
                 ok: false,
@@ -1338,7 +1370,7 @@ const crearAvisoDisponibilidad = async (req = request, res = response) => {
 
         const { dia, franja = '', lat, lng, radioKm = 4 } = req.body || {};
 
-        const parsedDia = dia ? new Date(dia) : null;
+        const parsedDia = dia ? parseCalendarDate(dia) : null;
         if (!parsedDia || Number.isNaN(parsedDia.getTime())) {
             return res.status(400).json({
                 ok: false,
