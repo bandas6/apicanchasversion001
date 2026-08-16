@@ -340,7 +340,29 @@ const obtenerMisSolicitudes = async (req = request, res = response) => {
                 ],
             });
 
-        return res.status(200).json({ ok: true, solicitudes: membresias });
+        // M1 (pantalla 6) muestra 'Fútbol 7 · 9 jugadores' por invitacion
+        // recibida -- jugadoresCount va como campo hermano de 'equipo' en
+        // cada solicitud (mismo criterio que obtenerMisEquipos), no
+        // mezclado dentro del doc de Equipo.
+        const equipoIds = membresias
+            .filter((m) => m.equipo)
+            .map((m) => m.equipo._id);
+        const conteos = await EquipoMembresia.aggregate([
+            { $match: { equipo: { $in: equipoIds }, estado: 'aceptada' } },
+            { $group: { _id: '$equipo', total: { $sum: 1 } } },
+        ]);
+        const conteoPorEquipo = new Map(
+            conteos.map((item) => [String(item._id), item.total]),
+        );
+
+        const solicitudes = membresias.map((membresia) => ({
+            ...membresia.toJSON(),
+            jugadoresCount: membresia.equipo
+                ? conteoPorEquipo.get(String(membresia.equipo._id)) || 0
+                : 0,
+        }));
+
+        return res.status(200).json({ ok: true, solicitudes });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
