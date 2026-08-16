@@ -2,7 +2,6 @@ const { response } = require('express');
 const mongoose = require('mongoose');
 const Complejo = require('../models/complejos');
 const Cancha = require('../models/canchas');
-const Equipo = require('../models/equipos');
 const Reserva = require('../models/reservas');
 
 const ADMIN_ROLES = ['ADMIN', 'DEV'];
@@ -235,48 +234,6 @@ const puedeGestionarReserva = async (req, res = response, next) => {
     });
 };
 
-const puedeGestionarEquipo = async (req, res = response, next) => {
-    if (!req.usuarioAuth) {
-        return res.status(401).json({
-            ok: false,
-            msg: 'Debes autenticarte para continuar'
-        });
-    }
-
-    if (tieneRol(req.usuarioAuth, ADMIN_ROLES)) {
-        return next();
-    }
-
-    if (!req.params.id) {
-        const ownerId = String(req.body.usuario || '');
-        if (ownerId && ownerId === String(req.usuarioAuth._id)) {
-            return next();
-        }
-        return res.status(403).json({
-            ok: false,
-            msg: 'Solo puedes crear equipos para tu propio usuario'
-        });
-    }
-
-    const equipo = await Equipo.findById(req.params.id).select('usuario');
-
-    if (!equipo) {
-        return res.status(404).json({
-            ok: false,
-            msg: 'Equipo no encontrado'
-        });
-    }
-
-    if (String(equipo.usuario) === String(req.usuarioAuth._id)) {
-        return next();
-    }
-
-    return res.status(403).json({
-        ok: false,
-        msg: 'No puedes modificar un equipo que no te pertenece'
-    });
-};
-
 const puedeLeerMensajesUsuario = (req, res = response, next) => {
     if (!req.usuarioAuth) {
         return res.status(401).json({
@@ -340,7 +297,6 @@ module.exports = {
     puedeGestionarComplejo,
     puedeGestionarCancha,
     puedeGestionarReserva,
-    puedeGestionarEquipo,
     puedeLeerMensajesUsuario,
     puedeGestionarSolicitudesComplejo,
     usuarioAdministraComplejo,

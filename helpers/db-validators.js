@@ -1,6 +1,4 @@
 const Complejos = require("../models/complejos");
-const Equipos = require("../models/equipos");
-const Partidos = require("../models/partidos");
 const Reservas = require("../models/reservas");
 const Roles = require("../models/roles");
 const Solicitudes = require("../models/solicitudes");
@@ -16,51 +14,12 @@ const usuarioExiste = async (correo) => {
 
 }
 
-const equipoExiste = async (nombre) => {
-
-    const equipo = await Equipos.findOne({ nombre });
-
-    if (equipo) {
-        throw new Error(`El nombre ${equipo.nombre} ya existe`);
-    }
-
-}
-
 const nombreComplejoExise = async (nombre) => {
 
     const complejo = await Complejos.findOne({ nombre });
 
     if (complejo) {
         throw new Error(`El nombre ${complejo.nombre} ya existe`);
-    }
-
-}
-
-const partidoExiste = async (usuarios) => {
-    const usuarioUno = usuarios.usuarioUno;
-    const usuarioDos = usuarios.usuarioDos;
-
-    // Busca un partido donde ambos usuarios estén presentes
-    const partido = await Partidos.findOne({
-        $or: [
-            { 'usuarios.usuarioUno': usuarioUno, 'usuarios.usuarioDos': usuarioDos },
-            { 'usuarios.usuarioUno': usuarioDos, 'usuarios.usuarioDos': usuarioUno }
-        ]
-    });
-
-    console.log(partido);
-
-    if (partido) {
-        throw new Error(`Ya has enviado una solicitud a este equipo`);
-    }
-}
-
-const usuarioConEquipoRegistrado = async (usuario) => {
-
-    const equipo = await Equipos.findOne({ usuario });
-
-    if (equipo) {
-        throw new Error(`El usuario ya tiene un equipo registrado`);
     }
 
 }
@@ -131,9 +90,6 @@ module.exports = {
     esRolValido,
     usuarioNoExiste,
     usuarioConCorreoNoExiste,
-    equipoExiste,
-    usuarioConEquipoRegistrado,
-    partidoExiste,
     nombreComplejoExise,
     esRolAdministrableValido,
     esRolGeneralAdministrableValido,

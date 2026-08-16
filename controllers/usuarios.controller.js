@@ -185,7 +185,11 @@ const toPublicUsuario = (usuario = null) => {
         horariosPreferidos: Array.isArray(source.horariosPreferidos) ? source.horariosPreferidos : [],
         tipoCanchaPreferida: source.tipoCanchaPreferida || '',
         rol: source.rol || 'USER',
-        equipo_id: source.equipo_id || null,
+        // entrega-equipos (32): 'Identidad validada' en Invitar jugador y en
+        // Solicitudes del equipo se arma con este campo -- no es dato
+        // sensible (solo pendiente/aprobada/rechazada), es el mismo criterio
+        // ya usado en otras pantallas de la app para mostrar el badge.
+        identidadEstado: source.identidadEstado || 'no_enviada',
         estado: source.estado === true,
     };
 };
@@ -230,7 +234,6 @@ const obtenerUsuarios = async (req = require, res = response) => {
             Usuarios.find(query)
                 .skip(Number(desde))
                 .limit(Number(limit))
-                .populate('equipo_id')
                 .select('-password') // Excluir el campo password directamente en la consulta
                 .select('__v') // Excluir el campo contrasenia directamente en la consulta
         ]);
@@ -261,7 +264,6 @@ const obtenerMiUsuario = async (req = require, res = response) => {
     try {
         const usuarioId = req.usuarioAuth?._id;
         const usuario = await Usuarios.findById(usuarioId)
-            .populate('equipo_id')
             .select('-password')
             .select('__v');
 
@@ -479,7 +481,7 @@ const obtenerUsuario = async (req = require, res = response) => {
 
         const { id } = req.params;
 
-        const usuario = await Usuarios.findById(id).populate('equipo_id')
+        const usuario = await Usuarios.findById(id);
 
         if (!usuario || !usuario.estado) {
             return res.status(404).json({
