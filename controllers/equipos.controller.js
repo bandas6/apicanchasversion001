@@ -2,6 +2,7 @@ const { request, response } = require('express');
 const Equipos = require('../models/equipos');
 const { EquipoMembresia } = require('../models/equipo-membresias');
 const Deportes = require('../models/deportes');
+const Usuarios = require('../models/usuarios');
 const { ADMIN_ROLES, tieneRol } = require('../middlewares/validar-roles');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
 const {
@@ -9,6 +10,7 @@ const {
     puedeResponderMembresia,
     puedeExpulsarMiembro,
     puedeSalirDelEquipo,
+    puedeParticiparEnEquipos,
 } = require('../helpers/equipos-social');
 
 const buildEquipoEscudoPublicId = (equipoId) =>
@@ -42,6 +44,10 @@ const tieneEquipoAceptadoEnDeporte = async (usuarioId, deporteId) => {
 
 const crearEquipo = async (req = request, res = response) => {
     try {
+        if (!puedeParticiparEnEquipos({ rol: req.usuarioAuth.rol })) {
+            return res.status(403).json({ ok: false, error: 'Solo los usuarios jugadores pueden crear equipos' });
+        }
+
         const { nombre, deporte, descripcion, nombreArchivoImagen } = req.body;
         const capitanId = req.usuarioAuth._id;
 
@@ -279,6 +285,10 @@ const solicitarUnirseEquipo = async (req = request, res = response) => {
         const { mensaje = '' } = req.body;
         const usuarioId = req.usuarioAuth._id;
 
+        if (!puedeParticiparEnEquipos({ rol: req.usuarioAuth.rol })) {
+            return res.status(403).json({ ok: false, error: 'Solo los usuarios jugadores pueden unirse a un equipo' });
+        }
+
         const equipo = await Equipos.findById(id);
         if (!equipo || !equipo.estado) {
             return res.status(404).json({ ok: false, error: 'Equipo no encontrado' });
@@ -329,6 +339,15 @@ const invitarJugador = async (req = request, res = response) => {
 
         if (String(usuarioId) === String(equipo.capitan)) {
             return res.status(400).json({ ok: false, error: 'El capitan ya pertenece al equipo' });
+        }
+
+        // Defensa en profundidad: /jugadores (listado de Invitar jugador) ya
+        // filtra por rol:'USER', pero este endpoint recibe el usuarioId
+        // directo del body -- sin este chequeo, nada impide invitar a un
+        // ADMIN/DEV pasando su id a mano.
+        const usuarioObjetivo = await Usuarios.findById(usuarioId).select('rol estado');
+        if (!usuarioObjetivo || !usuarioObjetivo.estado || !puedeParticiparEnEquipos({ rol: usuarioObjetivo.rol })) {
+            return res.status(400).json({ ok: false, error: 'Solo podes invitar a usuarios jugadores' });
         }
 
         const yaPendiente = await EquipoMembresia.findOne({ equipo: id, usuario: usuarioId, estado: 'pendiente' });

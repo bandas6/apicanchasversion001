@@ -6,6 +6,7 @@ const {
     puedeResponderMembresia,
     puedeExpulsarMiembro,
     puedeSalirDelEquipo,
+    puedeParticiparEnEquipos,
 } = require('../helpers/equipos-social');
 
 test('puedeGestionarEquipo: el capitan puede, otro jugador no', () => {
@@ -109,4 +110,11 @@ test('puedeExpulsarMiembro: un jugador que no es capitan no puede expulsar', () 
 test('puedeSalirDelEquipo: cualquier miembro puede salir, el capitan no', () => {
     assert.equal(puedeSalirDelEquipo({ membresiaRol: 'miembro' }), true);
     assert.equal(puedeSalirDelEquipo({ membresiaRol: 'capitan' }), false);
+});
+
+test('puedeParticiparEnEquipos: solo el rol USER puede crear/unirse/ser invitado', () => {
+    assert.equal(puedeParticiparEnEquipos({ rol: 'USER' }), true);
+    assert.equal(puedeParticiparEnEquipos({ rol: 'ADMIN' }), false);
+    assert.equal(puedeParticiparEnEquipos({ rol: 'DEV' }), false);
+    assert.equal(puedeParticiparEnEquipos({ rol: undefined }), false);
 });

@@ -48,9 +48,18 @@ const puedeExpulsarMiembro = ({ capitanId, usuarioId, esAdmin, membresiaRol }) =
  */
 const puedeSalirDelEquipo = ({ membresiaRol }) => membresiaRol !== 'capitan';
 
+/**
+ * Equipos/social (entrega 33) es exclusivo del rol jugador (USER): ADMIN/DEV
+ * no crean equipos, no piden unirse y no pueden ser invitados. Un solo
+ * predicado para las 3 verificaciones (crear equipo, pedir unirse, invitar a
+ * alguien) en vez de repetir el string 'USER' suelto en el controller.
+ */
+const puedeParticiparEnEquipos = ({ rol }) => rol === 'USER';
+
 module.exports = {
     puedeGestionarEquipo,
     puedeResponderMembresia,
     puedeExpulsarMiembro,
     puedeSalirDelEquipo,
+    puedeParticiparEnEquipos,
 };
