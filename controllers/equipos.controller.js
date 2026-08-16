@@ -288,14 +288,28 @@ const invitarJugador = async (req = request, res = response) => {
 
 const obtenerMisSolicitudes = async (req = request, res = response) => {
     try {
+        // 'Te esperan' (pantalla 6, M1) son las invitaciones que todavia no
+        // respondiste; 'Lo que enviaste' (M2) muestra tus propias solicitudes
+        // en sus 3 estados (pendiente/aceptada/rechazada), no solo las
+        // pendientes -- por eso el origen decide el filtro de estado, no una
+        // condicion unica para toda la consulta. Las membresias 'creacion'
+        // (sos capitan) nunca matchean ninguna de las 2 ramas.
         const membresias = await EquipoMembresia.find({
             usuario: req.usuarioAuth._id,
-            estado: 'pendiente',
-        }).populate({
-            path: 'equipo',
-            select: 'nombre nombreArchivoImagen deporte',
-            populate: [{ path: 'deporte', select: 'nombre' }],
-        });
+            $or: [
+                { origen: 'invitacion', estado: 'pendiente' },
+                { origen: 'solicitud' },
+            ],
+        })
+            .sort({ createdAt: -1 })
+            .populate({
+                path: 'equipo',
+                select: 'nombre nombreArchivoImagen deporte capitan',
+                populate: [
+                    { path: 'deporte', select: 'nombre' },
+                    { path: 'capitan', select: 'nombre apellido' },
+                ],
+            });
 
         return res.status(200).json({ ok: true, solicitudes: membresias });
     } catch (error) {
