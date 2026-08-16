@@ -11,6 +11,12 @@ const {
 } = require('../helpers/equipos-social');
 
 const ROSTER_POPULATE = { path: 'usuario', select: 'nombre apellido nombre_archivo_imagen' };
+// Pantalla 5 (Solicitudes del equipo) muestra 'Identidad validada' -- el
+// roster (D4) no, asi que ese select no carga identidadEstado de mas.
+const SOLICITUD_POPULATE = {
+    path: 'usuario',
+    select: 'nombre apellido nombre_archivo_imagen identidadEstado',
+};
 
 const esAdmin = (req) => tieneRol(req.usuarioAuth, ADMIN_ROLES);
 
@@ -311,7 +317,7 @@ const obtenerSolicitudesDeEquipo = async (req = request, res = response) => {
         }
 
         const solicitudes = await EquipoMembresia.find({ equipo: id, origen: 'solicitud', estado: 'pendiente' })
-            .populate(ROSTER_POPULATE);
+            .populate(SOLICITUD_POPULATE);
 
         return res.status(200).json({ ok: true, solicitudes });
     } catch (error) {

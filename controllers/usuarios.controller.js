@@ -185,6 +185,11 @@ const toPublicUsuario = (usuario = null) => {
         horariosPreferidos: Array.isArray(source.horariosPreferidos) ? source.horariosPreferidos : [],
         tipoCanchaPreferida: source.tipoCanchaPreferida || '',
         rol: source.rol || 'USER',
+        // entrega-equipos (32): 'Identidad validada' en Invitar jugador y en
+        // Solicitudes del equipo se arma con este campo -- no es dato
+        // sensible (solo pendiente/aprobada/rechazada), es el mismo criterio
+        // ya usado en otras pantallas de la app para mostrar el badge.
+        identidadEstado: source.identidadEstado || 'no_enviada',
         estado: source.estado === true,
     };
 };
