@@ -24,6 +24,15 @@ const EquipoSchema = new Schema({
         type: String,
         default: '',
     },
+    // Fase 3 (docs/equipos-social-plan.md): zona/ubicacion de referencia para
+    // la busqueda publica -- mismo catalogo (CATALOGOS_PERFIL.zonas) que ya
+    // usa Usuario.zonaPreferida, opcional (equipos creados antes de esta fase
+    // quedan sin zona, no se inventa un valor para ellos).
+    zona: {
+        type: String,
+        trim: true,
+        default: '',
+    },
     capitan: {
         type: Schema.Types.ObjectId,
         ref: 'Usuario',
@@ -55,6 +64,7 @@ const EquipoSchema = new Schema({
 }, { timestamps: true });
 
 EquipoSchema.index({ estado: 1, deporte: 1, nombre: 1 });
+EquipoSchema.index({ estado: 1, deporte: 1, zona: 1 });
 
 EquipoSchema.methods.toJSON = function () {
     const { __v, _id, ...equipo } = this.toObject();

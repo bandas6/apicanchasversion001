@@ -18,7 +18,7 @@ const {
     expulsarMiembro,
     cancelarSolicitud,
 } = require('../controllers/equipos.controller');
-const { validarJWT } = require('../middlewares/validar-jwt');
+const { validarJWT, validarJWTOptional } = require('../middlewares/validar-jwt');
 const { validarCampos } = require('../middlewares/validar-campos');
 const { uploadMemory } = require('../middlewares/upload-memory');
 
@@ -30,9 +30,13 @@ router.get('/mis-equipos', [validarJWT], obtenerMisEquipos);
 
 router.get('/mis-solicitudes', [validarJWT], obtenerMisSolicitudes);
 
-router.get('/', obtenerEquipos);
+// Fase 3: publicas (sin login se puede navegar/buscar), pero con
+// validarJWTOptional para que, si hay sesion, el controller pueda excluir
+// bloqueos reciprocos y decidir cuanto roster mostrar (ver obtenerEquipo).
+router.get('/', [validarJWTOptional], obtenerEquipos);
 
 router.get('/:id', [
+    validarJWTOptional,
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], obtenerEquipo);

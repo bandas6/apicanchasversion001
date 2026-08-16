@@ -5,6 +5,8 @@ const Deportes = require('../models/deportes');
 const Usuarios = require('../models/usuarios');
 const { ADMIN_ROLES, tieneRol } = require('../middlewares/validar-roles');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
+const { CATALOGOS_PERFIL, normalizeCatalogValue } = require('../helpers/profile-catalogs');
+const { resolveIdsBloqueados } = require('../helpers/bloqueos');
 const {
     puedeGestionarEquipo,
     puedeResponderMembresia,
@@ -12,6 +14,19 @@ const {
     puedeSalirDelEquipo,
     puedeParticiparEnEquipos,
 } = require('../helpers/equipos-social');
+
+// Fase 3: zona es opcional -- un equipo creado sin zona simplemente no
+// aparece filtrado por zona en la busqueda, no se le inventa un valor.
+// Devuelve undefined si vino un valor pero no matchea el catalogo (para que
+// el caller responda 400), '' si no vino nada.
+const normalizarZonaEquipo = (zona) => {
+    const normalizado = String(zona || '').trim();
+    if (!normalizado) {
+        return '';
+    }
+
+    return normalizeCatalogValue(normalizado, CATALOGOS_PERFIL.zonas) || undefined;
+};
 
 const buildEquipoEscudoPublicId = (equipoId) =>
     `escudo-${String(equipoId || '').trim()}-${Date.now()}`.replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -48,7 +63,7 @@ const crearEquipo = async (req = request, res = response) => {
             return res.status(403).json({ ok: false, error: 'Solo los usuarios jugadores pueden crear equipos' });
         }
 
-        const { nombre, deporte, descripcion, nombreArchivoImagen } = req.body;
+        const { nombre, deporte, descripcion, nombreArchivoImagen, zona } = req.body;
         const capitanId = req.usuarioAuth._id;
 
         const deporteDoc = await Deportes.findById(deporte);
@@ -63,11 +78,17 @@ const crearEquipo = async (req = request, res = response) => {
             });
         }
 
+        const zonaNormalizada = normalizarZonaEquipo(zona);
+        if (zonaNormalizada === undefined) {
+            return res.status(400).json({ ok: false, error: 'Debes seleccionar una zona valida' });
+        }
+
         const equipo = new Equipos({
             nombre,
             deporte,
             descripcion,
             nombreArchivoImagen,
+            zona: zonaNormalizada,
             capitan: capitanId,
         });
         await equipo.save();
@@ -89,7 +110,7 @@ const crearEquipo = async (req = request, res = response) => {
 
 const obtenerEquipos = async (req = request, res = response) => {
     try {
-        const { limit = 20, desde = 0, deporte, q } = req.query;
+        const { limit = 20, desde = 0, deporte, zona, q } = req.query;
         const query = { estado: true };
         const normalizedQuery = String(q || '').trim();
 
@@ -97,11 +118,29 @@ const obtenerEquipos = async (req = request, res = response) => {
             query.deporte = deporte;
         }
 
+        if (zona) {
+            query.zona = zona;
+        }
+
         if (normalizedQuery) {
             query.nombre = new RegExp(
                 normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
                 'i',
             );
+        }
+
+        // Fase 3: si hay sesion, excluir equipos capitaneados por alguien con
+        // relacion de bloqueo (en cualquier direccion) con quien busca.
+        if (req.usuarioAuth) {
+            const viewerId = req.usuarioAuth._id;
+            const meBloquearon = await Usuarios.find({ usuariosBloqueados: viewerId }).select('_id');
+            const idsBloqueo = resolveIdsBloqueados(
+                req.usuarioAuth.usuariosBloqueados || [],
+                meBloquearon.map((u) => u._id),
+            );
+            if (idsBloqueo.length > 0) {
+                query.capitan = { $nin: idsBloqueo };
+            }
         }
 
         const [total, equipos] = await Promise.all([
@@ -113,7 +152,22 @@ const obtenerEquipos = async (req = request, res = response) => {
                 .limit(Number(limit)),
         ]);
 
-        return res.status(200).json({ ok: true, total, equipos });
+        // E2 (Mis equipos) y ahora tambien la busqueda publica muestran
+        // 'Fútbol 5 · 8 jugadores' -- mismo criterio de conteo agrupado que
+        // obtenerMisEquipos/obtenerMisSolicitudes, jugadoresCount como campo
+        // hermano de cada equipo (no anidado en el doc de Equipo).
+        const conteos = await EquipoMembresia.aggregate([
+            { $match: { equipo: { $in: equipos.map((e) => e._id) }, estado: 'aceptada' } },
+            { $group: { _id: '$equipo', total: { $sum: 1 } } },
+        ]);
+        const conteoPorEquipo = new Map(conteos.map((item) => [String(item._id), item.total]));
+
+        const equiposConConteo = equipos.map((equipo) => ({
+            ...equipo.toJSON(),
+            jugadoresCount: conteoPorEquipo.get(String(equipo._id)) || 0,
+        }));
+
+        return res.status(200).json({ ok: true, total, equipos: equiposConConteo });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
@@ -145,7 +199,23 @@ const obtenerEquipo = async (req = request, res = response) => {
             .populate(ROSTER_POPULATE)
             .sort({ rol: 1, createdAt: 1 });
 
-        return res.status(200).json({ ok: true, equipo, roster });
+        // Fase 3: este endpoint ahora es genuinamente publico/descubrible
+        // (busqueda de equipos) -- las invitaciones pendientes solo las ve
+        // quien ya pertenece al equipo o un admin. Un visitante que solo
+        // esta mirando el equipo desde la busqueda no deberia ver a quien
+        // invitaron.
+        const usuarioAuthId = req.usuarioAuth ? String(req.usuarioAuth._id) : null;
+        const perteneceAlEquipo = usuarioAuthId
+            ? roster.some((m) => m.estado === 'aceptada'
+                && String(m.usuario?._id || m.usuario) === usuarioAuthId)
+            : false;
+        const puedeVerPendientes = perteneceAlEquipo || Boolean(req.usuarioAuth && esAdmin(req));
+
+        const rosterVisible = puedeVerPendientes
+            ? roster
+            : roster.filter((m) => m.estado === 'aceptada');
+
+        return res.status(200).json({ ok: true, equipo, roster: rosterVisible });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
@@ -164,10 +234,17 @@ const actualizarEquipo = async (req = request, res = response) => {
             return res.status(403).json({ ok: false, error: 'No podes modificar un equipo que no te pertenece' });
         }
 
-        const { nombre, descripcion, nombreArchivoImagen } = req.body;
+        const { nombre, descripcion, nombreArchivoImagen, zona } = req.body;
         if (nombre !== undefined) equipo.nombre = nombre;
         if (descripcion !== undefined) equipo.descripcion = descripcion;
         if (nombreArchivoImagen !== undefined) equipo.nombreArchivoImagen = nombreArchivoImagen;
+        if (zona !== undefined) {
+            const zonaNormalizada = normalizarZonaEquipo(zona);
+            if (zonaNormalizada === undefined) {
+                return res.status(400).json({ ok: false, error: 'Debes seleccionar una zona valida' });
+            }
+            equipo.zona = zonaNormalizada;
+        }
         await equipo.save();
 
         return res.status(200).json({ ok: true, equipo });
