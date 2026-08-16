@@ -14,6 +14,7 @@ const {
     responderMembresia,
     salirDelEquipo,
     expulsarMiembro,
+    cancelarSolicitud,
 } = require('../controllers/equipos.controller');
 const { validarJWT } = require('../middlewares/validar-jwt');
 const { validarCampos } = require('../middlewares/validar-campos');
@@ -91,5 +92,11 @@ router.delete('/:id/membresia', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], salirDelEquipo);
+
+router.delete('/solicitudes/:membresiaId', [
+    validarJWT,
+    check('membresiaId', 'No es un id valido').isMongoId(),
+    validarCampos,
+], cancelarSolicitud);
 
 module.exports = router;

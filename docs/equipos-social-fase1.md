@@ -93,6 +93,23 @@ Tests: `test/equipos-social.test.js`, 8 casos.
 | PUT | `/:id/membresias/:membresiaId` | Aceptar/rechazar (`{ aceptar: true\|false }`). |
 | DELETE | `/:id/membresias/:membresiaId` | Expulsar (capitan/admin). |
 | DELETE | `/:id/membresia` | Salir del equipo (el propio usuario). |
+| DELETE | `/solicitudes/:membresiaId` | Cancelar una solicitud propia pendiente. |
+
+## Actualizacion 2026-08-16 (diseño 32 — "Mis equipos"): 2 correcciones
+
+El diseño de las pantallas de esta fase (`implementar-mis-equipos.md`, verificaciones V4/V5)
+encontro 2 huecos reales en la Fase 1 original:
+
+- **V4**: no existia forma de que un usuario retirara su propia solicitud pendiente
+  ("Lo que enviaste" > "Cancelar" en Mis solicitudes). Se agrego `cancelarSolicitud`
+  (`DELETE /api/equipos/solicitudes/:membresiaId`) — borra la membresia solo si es propia,
+  `origen: 'solicitud'` y sigue `pendiente`.
+- **V5**: `eliminarEquipo` marcaba el equipo `estado: false` pero no tocaba las
+  `EquipoMembresia` asociadas — quedaban huerfanas (roster, invitaciones y solicitudes
+  pendientes apuntando a un equipo inactivo). La hoja de confirmacion de borrado en el
+  frontend promete "se pierden el plantel y las solicitudes pendientes"; ahora
+  `eliminarEquipo` corre `EquipoMembresia.deleteMany({ equipo: id })` despues del soft
+  delete, así que esa promesa es cierta.
 
 ## No implementado en esta fase (a proposito)
 

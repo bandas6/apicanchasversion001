@@ -166,6 +166,12 @@ const eliminarEquipo = async (req = request, res = response) => {
         equipo.estado = false;
         await equipo.save();
 
+        // V5 (docs/equipos-social-fase1.md, hallazgo del diseño 32d): D6 le
+        // promete al capitan que "se pierden el plantel y las solicitudes
+        // pendientes" -- sin esto, las EquipoMembresia (roster, invitaciones,
+        // solicitudes) quedaban huerfanas apuntando a un equipo ya inactivo.
+        await EquipoMembresia.deleteMany({ equipo: id });
+
         return res.status(200).json({ ok: true, equipo });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
@@ -391,6 +397,35 @@ const salirDelEquipo = async (req = request, res = response) => {
     }
 };
 
+// V4 (docs/equipos-social-fase1.md, hallazgo del diseño 32d): el usuario que
+// envio una solicitud ('origen: solicitud') puede retirarla mientras siga
+// pendiente. No usa el mismo endpoint que expulsarMiembro porque ahi el
+// autorizado es el capitan sobre una membresia 'aceptada' -- aca es el
+// propio usuario sobre su propia membresia 'pendiente'.
+const cancelarSolicitud = async (req = request, res = response) => {
+    try {
+        const { membresiaId } = req.params;
+        const usuarioId = req.usuarioAuth._id;
+
+        const membresia = await EquipoMembresia.findOne({
+            _id: membresiaId,
+            usuario: usuarioId,
+            origen: 'solicitud',
+            estado: 'pendiente',
+        });
+
+        if (!membresia) {
+            return res.status(404).json({ ok: false, error: 'Solicitud no encontrada' });
+        }
+
+        await membresia.deleteOne();
+
+        return res.status(200).json({ ok: true });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
 const expulsarMiembro = async (req = request, res = response) => {
     try {
         const { id, membresiaId } = req.params;
@@ -438,4 +473,5 @@ module.exports = {
     responderMembresia,
     salirDelEquipo,
     expulsarMiembro,
+    cancelarSolicitud,
 };
