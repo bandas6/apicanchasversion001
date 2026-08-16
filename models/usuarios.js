@@ -106,6 +106,21 @@ const UsuarioSchema = new Schema({
         trim: true,
         default: '',
     },
+    // Fase 3 (docs/equipos-social-plan.md): opt-in explicito para aparecer
+    // en la busqueda publica de "jugadores buscando equipo" -- sin este
+    // flag, cualquier jugador con rol USER apareceria ahi sin haber elegido
+    // exponerse, distinto al buscador de Invitar jugador (Fase 2) que es
+    // por nombre y no depende de este flag.
+    buscandoEquipo: {
+        type: Boolean,
+        default: false,
+    },
+    // Fase 3: bloqueo minimo entre usuarios -- oculta reciprocamente al
+    // bloqueado/bloqueador de la busqueda publica de jugadores y equipos.
+    usuariosBloqueados: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Usuario',
+    }],
     horariosPreferidos: [{
         type: String,
         trim: true,

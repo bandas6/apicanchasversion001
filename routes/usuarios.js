@@ -17,6 +17,7 @@ const {
     obtenerResumenReputacionUsuario,
     obtenerMisFavoritos,
     toggleFavoritoUsuario,
+    toggleBloqueoUsuario,
     guardarFiltroUsuario,
     eliminarFiltroUsuario,
     registrarPushTokenUsuario,
@@ -61,6 +62,11 @@ router.post('/me/favoritos/toggle', [
     validarJWT,
     validarCampos,
 ], toggleFavoritoUsuario);
+
+router.post('/me/bloqueos/toggle', [
+    validarJWT,
+    validarCampos,
+], toggleBloqueoUsuario);
 
 router.post('/me/filtros', [
     validarJWT,

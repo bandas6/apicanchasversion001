@@ -5,6 +5,7 @@ const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
 const bcryptjs = require('bcryptjs');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
 const { recalculateUserReliability } = require('../helpers/reservation-reputation');
+const { resolveIdsBloqueados } = require('../helpers/bloqueos');
 const {
     CATALOGOS_PERFIL,
     normalizeCatalogValue,
@@ -89,6 +90,10 @@ const normalizarPayloadUsuario = (data = {}) => {
 
     if (payload.valoracion !== undefined) {
         payload.valoracion = Number(payload.valoracion || 0);
+    }
+
+    if (payload.buscandoEquipo !== undefined) {
+        payload.buscandoEquipo = Boolean(payload.buscandoEquipo);
     }
 
     validateProfileCatalogs(payload);
@@ -190,13 +195,19 @@ const toPublicUsuario = (usuario = null) => {
         // sensible (solo pendiente/aprobada/rechazada), es el mismo criterio
         // ya usado en otras pantallas de la app para mostrar el badge.
         identidadEstado: source.identidadEstado || 'no_enviada',
+        // Fase 3: opt-in de "busco equipo" -- publico a proposito, es lo que
+        // permite que el jugador aparezca/se distinga en la busqueda.
+        buscandoEquipo: source.buscandoEquipo === true,
         estado: source.estado === true,
     };
 };
 
 const obtenerUsuarios = async (req = require, res = response) => {
     try {
-        const { limit = 20, desde = 0, rol, identidadVerificada, identidadEstado, destacados, q } = req.query;
+        const {
+            limit = 20, desde = 0, rol, identidadVerificada, identidadEstado, destacados, q,
+            zona, nivel, deporte, buscandoEquipo,
+        } = req.query;
         const query = { estado: true };
         const fullAccess = isGeneralAdmin(req);
         const searchRegex = buildSearchRegex(q);
@@ -220,13 +231,59 @@ const obtenerUsuarios = async (req = require, res = response) => {
             query.identidadEstado = identidadEstado;
         }
 
+        // Fase 3: filtros de busqueda publica de jugadores. Todos opcionales
+        // -- Invitar jugador (Fase 2) no los manda y sigue funcionando igual
+        // (busqueda por nombre/apellido/correo/ciudad via q).
+        if (zona) {
+            query.zonaPreferida = zona;
+        }
+
+        if (nivel) {
+            query.nivelJuego = nivel;
+        }
+
+        if (buscandoEquipo === 'true') {
+            query.buscandoEquipo = true;
+        }
+
+        // deporte y q usan $or cada uno -- se acumulan en $and en vez de
+        // pisarse entre si si vienen los dos juntos.
+        const condicionesAnd = [];
+
+        if (deporte) {
+            condicionesAnd.push({
+                $or: [{ deportesFavoritos: deporte }, { deportesPrincipales: deporte }],
+            });
+        }
+
         if (searchRegex) {
-            query.$or = [
-                { nombre: searchRegex },
-                { apellido: searchRegex },
-                { correo: searchRegex },
-                { ciudad: searchRegex },
-            ];
+            condicionesAnd.push({
+                $or: [
+                    { nombre: searchRegex },
+                    { apellido: searchRegex },
+                    { correo: searchRegex },
+                    { ciudad: searchRegex },
+                ],
+            });
+        }
+
+        if (condicionesAnd.length > 0) {
+            query.$and = condicionesAnd;
+        }
+
+        // Fase 3: excluir bloqueos reciprocos de la busqueda publica. No
+        // aplica cuando fullAccess (un admin revisando la lista completa no
+        // deberia perder visibilidad de nadie por un bloqueo entre jugadores).
+        if (!fullAccess && req.usuarioAuth) {
+            const viewerId = req.usuarioAuth._id;
+            const meBloquearon = await Usuarios.find({ usuariosBloqueados: viewerId }).select('_id');
+            const idsBloqueo = resolveIdsBloqueados(
+                req.usuarioAuth.usuariosBloqueados || [],
+                meBloquearon.map((u) => u._id),
+            );
+            if (idsBloqueo.length > 0) {
+                query._id = { $nin: idsBloqueo };
+            }
         }
 
         const [total, usuarios] = await Promise.all([
@@ -338,6 +395,44 @@ const toggleFavoritoUsuario = async (req = require, res = response) => {
             tipo,
             targetId: target,
             isFavorite: !exists,
+        });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+// Fase 3: bloqueo minimo entre usuarios -- oculta reciprocamente al
+// bloqueado/bloqueador en la busqueda publica de jugadores/equipos (ver
+// obtenerUsuarios/obtenerEquipos). No cancela solicitudes/membresias ya
+// existentes, solo evita descubrirse de nuevo.
+const toggleBloqueoUsuario = async (req = require, res = response) => {
+    try {
+        const { targetId } = req.body || {};
+        const usuario = await Usuarios.findById(req.usuarioAuth?._id);
+
+        if (!usuario) {
+            return res.status(404).json({ ok: false, error: 'Usuario no encontrado' });
+        }
+
+        const target = String(targetId || '').trim();
+        if (!target) {
+            return res.status(400).json({ ok: false, error: 'Debes enviar targetId' });
+        }
+
+        if (target === String(usuario._id)) {
+            return res.status(400).json({ ok: false, error: 'No podes bloquearte a vos mismo' });
+        }
+
+        const exists = (usuario.usuariosBloqueados || []).some((item) => String(item) === target);
+        usuario.usuariosBloqueados = exists
+            ? (usuario.usuariosBloqueados || []).filter((item) => String(item) !== target)
+            : [...(usuario.usuariosBloqueados || []), target];
+        await usuario.save();
+
+        return res.status(200).json({
+            ok: true,
+            targetId: target,
+            isBlocked: !exists,
         });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
@@ -581,6 +676,9 @@ const actualizarUsuario = async (req = require, res = response) => {
         delete resto.identidadVerificadaPor;
         delete resto.identidadVerificadaAt;
         delete resto.identidadSolicitadaAt;
+        // usuariosBloqueados solo se toca via toggleBloqueoUsuario (add/remove
+        // atomico) -- este endpoint generico no debe poder pisarlo entero.
+        delete resto.usuariosBloqueados;
 
         if (password) {
             const salt = await bcryptjs.genSaltSync();
@@ -1253,6 +1351,7 @@ module.exports = {
     obtenerResumenReputacionUsuario,
     obtenerMisFavoritos,
     toggleFavoritoUsuario,
+    toggleBloqueoUsuario,
     guardarFiltroUsuario,
     eliminarFiltroUsuario,
     registrarPushTokenUsuario,
