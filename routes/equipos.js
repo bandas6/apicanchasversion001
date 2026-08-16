@@ -11,6 +11,7 @@ const {
     invitarJugador,
     obtenerMisSolicitudes,
     obtenerSolicitudesDeEquipo,
+    obtenerInvitacionesDeEquipo,
     responderMembresia,
     salirDelEquipo,
     expulsarMiembro,
@@ -64,6 +65,12 @@ router.get('/:id/solicitudes', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], obtenerSolicitudesDeEquipo);
+
+router.get('/:id/invitaciones', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], obtenerInvitacionesDeEquipo);
 
 router.post('/:id/invitaciones', [
     validarJWT,

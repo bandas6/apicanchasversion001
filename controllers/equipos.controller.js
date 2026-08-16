@@ -339,6 +339,33 @@ const obtenerSolicitudesDeEquipo = async (req = request, res = response) => {
     }
 };
 
+// Pantalla 4 (Invitar jugador, I2): la lista de resultados de busqueda tiene
+// que distinguir 'ya esta en el equipo' de 'ya tiene invitacion pendiente'
+// de 'disponible' -- sin esto el capitan invita al vacio (puede reenviar una
+// invitacion que ya mando). Mismo shape que obtenerSolicitudesDeEquipo, pero
+// filtrando por el otro origen.
+const obtenerInvitacionesDeEquipo = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const equipo = await Equipos.findById(id);
+
+        if (!equipo || !equipo.estado) {
+            return res.status(404).json({ ok: false, error: 'Equipo no encontrado' });
+        }
+
+        if (!puedeGestionarEquipo({ capitanId: equipo.capitan, usuarioId: req.usuarioAuth._id, esAdmin: esAdmin(req) })) {
+            return res.status(403).json({ ok: false, error: 'Solo el capitan puede ver las invitaciones del equipo' });
+        }
+
+        const invitaciones = await EquipoMembresia.find({ equipo: id, origen: 'invitacion', estado: 'pendiente' })
+            .populate(SOLICITUD_POPULATE);
+
+        return res.status(200).json({ ok: true, invitaciones });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
 const responderMembresia = async (req = request, res = response) => {
     try {
         const { id, membresiaId } = req.params;
@@ -490,6 +517,7 @@ module.exports = {
     invitarJugador,
     obtenerMisSolicitudes,
     obtenerSolicitudesDeEquipo,
+    obtenerInvitacionesDeEquipo,
     responderMembresia,
     salirDelEquipo,
     expulsarMiembro,
