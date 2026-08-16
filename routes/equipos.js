@@ -5,6 +5,7 @@ const {
     obtenerEquipos,
     obtenerEquipo,
     actualizarEquipo,
+    actualizarFotoEquipo,
     eliminarEquipo,
     obtenerMisEquipos,
     solicitarUnirseEquipo,
@@ -19,6 +20,7 @@ const {
 } = require('../controllers/equipos.controller');
 const { validarJWT } = require('../middlewares/validar-jwt');
 const { validarCampos } = require('../middlewares/validar-campos');
+const { uploadMemory } = require('../middlewares/upload-memory');
 
 const router = Router();
 
@@ -47,6 +49,13 @@ router.put('/:id', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], actualizarEquipo);
+
+router.patch('/:id/foto', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    uploadMemory.single('foto'),
+    validarCampos,
+], actualizarFotoEquipo);
 
 router.delete('/:id', [
     validarJWT,

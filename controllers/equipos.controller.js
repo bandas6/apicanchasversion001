@@ -3,12 +3,16 @@ const Equipos = require('../models/equipos');
 const { EquipoMembresia } = require('../models/equipo-membresias');
 const Deportes = require('../models/deportes');
 const { ADMIN_ROLES, tieneRol } = require('../middlewares/validar-roles');
+const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
 const {
     puedeGestionarEquipo,
     puedeResponderMembresia,
     puedeExpulsarMiembro,
     puedeSalirDelEquipo,
 } = require('../helpers/equipos-social');
+
+const buildEquipoEscudoPublicId = (equipoId) =>
+    `escudo-${String(equipoId || '').trim()}-${Date.now()}`.replace(/[^a-zA-Z0-9-_]/g, '_');
 
 const ROSTER_POPULATE = { path: 'usuario', select: 'nombre apellido nombre_archivo_imagen' };
 // Pantalla 5 (Solicitudes del equipo) muestra 'Identidad validada' -- el
@@ -161,6 +165,39 @@ const actualizarEquipo = async (req = request, res = response) => {
         await equipo.save();
 
         return res.status(200).json({ ok: true, equipo });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+const actualizarFotoEquipo = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+        const equipo = await Equipos.findById(id);
+
+        if (!equipo || !equipo.estado) {
+            return res.status(404).json({ ok: false, error: 'Equipo no encontrado' });
+        }
+
+        if (!puedeGestionarEquipo({ capitanId: equipo.capitan, usuarioId: req.usuarioAuth._id, esAdmin: esAdmin(req) })) {
+            return res.status(403).json({ ok: false, error: 'No podes modificar un equipo que no te pertenece' });
+        }
+
+        const fotoFile = req.file;
+        if (!fotoFile?.buffer) {
+            return res.status(400).json({ ok: false, error: 'Debes adjuntar una imagen' });
+        }
+
+        const result = await uploadBufferToCloudinary({
+            buffer: fotoFile.buffer,
+            folder: 'canchas/equipos/escudo',
+            publicId: buildEquipoEscudoPublicId(id),
+        });
+
+        equipo.nombreArchivoImagen = result?.secure_url || '';
+        await equipo.save();
+
+        return res.status(200).json({ ok: true, equipo, nombreArchivoImagen: equipo.nombreArchivoImagen });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
@@ -562,6 +599,7 @@ module.exports = {
     obtenerEquipos,
     obtenerEquipo,
     actualizarEquipo,
+    actualizarFotoEquipo,
     eliminarEquipo,
     obtenerMisEquipos,
     solicitarUnirseEquipo,
