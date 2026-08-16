@@ -121,7 +121,17 @@ const obtenerEquipo = async (req = request, res = response) => {
             return res.status(404).json({ ok: false, error: 'Equipo no encontrado' });
         }
 
-        const roster = await EquipoMembresia.find({ equipo: id, estado: 'aceptada' })
+        // D4 (Detalle de equipo, plantel): tambien muestra a quien esta
+        // invitado pero todavia no acepto ('Invitación enviada'), no solo a
+        // los miembros ya aceptados -- por eso el roster no es solo
+        // estado:'aceptada'.
+        const roster = await EquipoMembresia.find({
+            equipo: id,
+            $or: [
+                { estado: 'aceptada' },
+                { origen: 'invitacion', estado: 'pendiente' },
+            ],
+        })
             .populate(ROSTER_POPULATE)
             .sort({ rol: 1, createdAt: 1 });
 
