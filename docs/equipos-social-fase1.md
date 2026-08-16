@@ -136,3 +136,25 @@ encontro 2 huecos reales en la Fase 1 original:
   responder membresia exige que el body mande `aceptar` como boolean real
   (no `"true"` string) — a confirmar que el cliente que se conecte
   (Flutter, Fase 2 en adelante) lo mande asi.
+
+## 2026-08-16 (entrega 33 — bugfix invitar + restriccion de rol)
+
+Reporte de uso real tras el despliegue de la entrega 32 (Mis equipos):
+
+- **`crearEquipo` y `solicitarUnirseEquipo` no chequeaban el rol del
+  usuario autenticado.** Cualquier cuenta ADMIN/DEV podia crear un equipo o
+  pedir unirse a uno, aunque el flujo esta pensado solo para jugadores
+  (rol `USER`). Se agrego el predicado puro `puedeParticiparEnEquipos({ rol
+  })` en `helpers/equipos-social.js` (testeado) y se lo verifica al inicio
+  de ambos controllers, devolviendo 403 si no es `USER`.
+- **`invitarJugador` no validaba el rol del usuario invitado.** El listado
+  de `/jugadores` (pantalla Invitar jugador) ya filtraba por `rol:'USER'`
+  (`obtenerJugadoresPublicos`), pero el endpoint de invitacion recibe el
+  `usuarioId` directo del body -- nada impedia invitar a un ADMIN/DEV
+  pasando su id a mano. Se agrego una consulta a `Usuarios` que rechaza la
+  invitacion (400) si el usuario objetivo no existe, esta inactivo, o no
+  tiene rol `USER`.
+
+No se toco `obtenerJugadoresPublicos`/`obtenerUsuarios` (`controllers/usuarios.controller.js`):
+ya filtraba a `rol:'USER'` desde la entrega 32, incluso con `q` vacio (sin
+query de busqueda devuelve los primeros 20 jugadores, no requiere texto).
