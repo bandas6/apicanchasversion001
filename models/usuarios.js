@@ -132,10 +132,6 @@ const UsuarioSchema = new Schema({
         type: Boolean,
         default: true
     },
-    equipo_id: {
-        type: Schema.Types.ObjectId,
-        ref: 'Equipo',
-    },
     complejosFavoritos: [{
         type: Schema.Types.ObjectId,
         ref: 'Complejo',
