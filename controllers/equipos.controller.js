@@ -194,12 +194,31 @@ const obtenerMisEquipos = async (req = request, res = response) => {
             populate: [{ path: 'deporte', select: 'nombre' }],
         });
 
-        const equipos = membresias
-            .filter((membresia) => membresia.equipo && membresia.equipo.estado)
-            .map((membresia) => ({
-                equipo: membresia.equipo,
-                rol: membresia.rol,
-            }));
+        const activas = membresias.filter(
+            (membresia) => membresia.equipo && membresia.equipo.estado,
+        );
+
+        // E2 (Mis equipos) muestra 'Fútbol 5 · 8 jugadores' -- el conteo del
+        // plantel completo de cada equipo, no solo si el propio usuario esta
+        // adentro. Un aggregate agrupado evita N consultas sueltas.
+        const conteos = await EquipoMembresia.aggregate([
+            {
+                $match: {
+                    equipo: { $in: activas.map((m) => m.equipo._id) },
+                    estado: 'aceptada',
+                },
+            },
+            { $group: { _id: '$equipo', total: { $sum: 1 } } },
+        ]);
+        const conteoPorEquipo = new Map(
+            conteos.map((item) => [String(item._id), item.total]),
+        );
+
+        const equipos = activas.map((membresia) => ({
+            equipo: membresia.equipo,
+            rol: membresia.rol,
+            jugadoresCount: conteoPorEquipo.get(String(membresia.equipo._id)) || 0,
+        }));
 
         return res.status(200).json({ ok: true, equipos });
     } catch (error) {
