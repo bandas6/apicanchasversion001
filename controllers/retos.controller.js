@@ -33,6 +33,13 @@ const RETO_POPULATE = [
 // todavia "real" en el sentido de la decision fundacional 2 del plan.
 const ESTADO_RESERVA_VINCULABLE = 'confirmada';
 
+// Que estados de reto "retienen" de verdad la reserva que tienen vinculada
+// -- un reto cancelado/rechazado/caducado no deberia seguir bloqueando que
+// esa misma reserva se use en otro reto distinto. Se usa tanto para el
+// check de "reserva ya usada" (vincularReserva) como para el picker del
+// frontend (obtenerReservasVinculadas).
+const ESTADOS_RETO_QUE_RETIENEN_RESERVA = ['aceptado', 'jugado'];
+
 const crearReto = async (req = request, res = response) => {
     try {
         const { equipoRetadorId, equipoRetadoId, mensaje = '', fechaPropuesta } = req.body;
@@ -233,7 +240,15 @@ const vincularReserva = async (req = request, res = response) => {
             return res.status(400).json({ ok: false, error: 'Solo se puede vincular una reserva confirmada' });
         }
 
-        const reservaYaUsada = await Reto.findOne({ reserva: reservaId, _id: { $ne: reto._id } });
+        // Solo un reto 'vivo' (aceptado/jugado) sostiene de verdad el
+        // vinculo -- uno cancelado/rechazado/caducado que alguna vez tuvo
+        // esta reserva no deberia seguir bloqueando que se reuse en otro
+        // reto distinto.
+        const reservaYaUsada = await Reto.findOne({
+            reserva: reservaId,
+            _id: { $ne: reto._id },
+            estado: { $in: ESTADOS_RETO_QUE_RETIENEN_RESERVA },
+        });
         if (reservaYaUsada) {
             return res.status(400).json({ ok: false, error: 'Esa reserva ya esta vinculada a otro reto' });
         }
@@ -365,6 +380,35 @@ const cancelarReto = async (req = request, res = response) => {
     }
 };
 
+// Picker de "Vincular reserva" (pantalla 34d/35d del diseño): antes de
+// listar mis reservas confirmadas para elegir, el frontend necesita saber
+// cuales ya estan vinculadas a un reto vivo, para mostrarlas deshabilitadas
+// en vez de dejar que el usuario elija una y recien enterarse en el 400 de
+// vincularReserva.
+const obtenerReservasVinculadas = async (req = request, res = response) => {
+    try {
+        const ids = String(req.query.ids || '')
+            .split(',')
+            .map((id) => id.trim())
+            .filter(Boolean);
+
+        if (ids.length === 0) {
+            return res.status(200).json({ ok: true, vinculadas: [] });
+        }
+
+        const retos = await Reto.find({
+            reserva: { $in: ids },
+            estado: { $in: ESTADOS_RETO_QUE_RETIENEN_RESERVA },
+        }).select('reserva');
+
+        const vinculadas = [...new Set(retos.map((reto) => String(reto.reserva)))];
+
+        return res.status(200).json({ ok: true, vinculadas });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
 module.exports = {
     crearReto,
     obtenerRetosDeEquipo,
@@ -374,4 +418,5 @@ module.exports = {
     desvincularReserva,
     marcarJugado,
     cancelarReto,
+    obtenerReservasVinculadas,
 };

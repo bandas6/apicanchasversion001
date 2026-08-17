@@ -9,6 +9,7 @@ const {
     desvincularReserva,
     marcarJugado,
     cancelarReto,
+    obtenerReservasVinculadas,
 } = require('../controllers/retos.controller');
 const { validarJWT } = require('../middlewares/validar-jwt');
 const { validarCampos } = require('../middlewares/validar-campos');
@@ -22,6 +23,8 @@ router.get('/equipo/:equipoId', [
     check('equipoId', 'No es un id valido').isMongoId(),
     validarCampos,
 ], obtenerRetosDeEquipo);
+
+router.get('/reservas-vinculadas', [validarJWT], obtenerReservasVinculadas);
 
 router.post('/', [
     validarJWT,

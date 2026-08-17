@@ -74,6 +74,24 @@ testeadas con `node --test` (este repo no tiene `mongodb-memory-server`).
 - `DELETE /retos/:id/reserva` — desvincula la reserva sin cancelar el reto
   (B5 del brief de diseño): un capitán vinculó la reserva equivocada y
   quiere corregirla sin perder la aceptación ni el mensaje del reto.
+- `GET /retos/reservas-vinculadas?ids=a,b,c` — de una lista de ids de
+  reserva, cuáles ya están vinculadas a un reto vivo (`aceptado`/`jugado`).
+  Pensado para el picker de "Vincular reserva" del frontend (pantalla
+  34d/35d del diseño): antes de listar las reservas propias para elegir,
+  necesita saber cuáles ya están tomadas para mostrarlas deshabilitadas
+  ("Ya está en otro reto") en vez de que el usuario elija una y recién se
+  entere en el 400 de `vincularReserva`.
+
+### Corrección: un reto cerrado no debería seguir "reteniendo" su reserva
+
+Encontrada al diseñar el picker de vincular reserva: el check de "esa
+reserva ya está vinculada a otro reto" (`vincularReserva`) no filtraba por
+`estado`, así que una reserva que había quedado vinculada a un reto
+`cancelado`/`rechazado`/`caducado` seguía bloqueando que se usara en un
+reto distinto, aunque ese primer reto ya no significara nada. Se agregó
+`ESTADOS_RETO_QUE_RETIENEN_RESERVA = ['aceptado', 'jugado']` y se usa tanto
+en ese check como en `obtenerReservasVinculadas` — solo un reto todavía
+vivo retiene de verdad la reserva.
 
 ## Verificación contra el brief de diseño de Fase 4 (B1–B6)
 
