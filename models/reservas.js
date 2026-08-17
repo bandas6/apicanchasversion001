@@ -190,7 +190,7 @@ ReservasSchema.post('save', async function (doc) {
     const { Reto } = require('./retos');
     await Reto.updateMany(
         { reserva: doc._id, estado: 'aceptado' },
-        { $set: { reserva: null } },
+        { $set: { reserva: null, reservaDesvinculadaEn: new Date() } },
     );
 });
 

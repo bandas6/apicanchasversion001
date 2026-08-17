@@ -23,6 +23,15 @@ Fase 3 (backend primero, diseño despues).
 - `aceptadoEn`: fecha en que el reto pasó a `aceptado` (no se puede usar
   `updatedAt`: ese timestamp se pisa con cualquier save posterior, no solo
   con la aceptación). Alimenta la caducidad de B1.
+- `reservaDesvinculadaEn`: distingue, con `reserva: null`, "nunca
+  coordinaron la cancha" de "la habían coordinado y se cayó" — el diseño
+  (D2 del brief) pinta 2 bloques distintos ("Falta coordinar la cancha" vs
+  "Se cayó la cancha") y sin esta marca no había forma de saber cuál
+  mostrar. Solo la pisa el hook de B2 cuando una reserva vinculada se
+  cancela; `vincularReserva` la limpia al vincular una nueva;
+  `desvincularReserva` (B5, corrección manual del capitán) **no la toca a
+  propósito** — no es lo mismo "se cayó" que "me equivoqué de reserva y la
+  saco yo mismo".
 - `mensaje`/`fechaPropuesta`: informativos, no atan nada — lo que fija
   cuándo y dónde se juega de verdad es la reserva vinculada.
 - `reserva`: ref a `Reserva`, `null` hasta que se vincula (ver abajo).

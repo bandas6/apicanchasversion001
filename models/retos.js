@@ -80,6 +80,19 @@ const RetoSchema = new Schema({
         ref: 'Reserva',
         default: null,
     },
+    // Distingue, con reserva:null, "nunca coordinaron la cancha" de "la
+    // habian coordinado y se cayo" -- el frontend (D2 del brief de diseño)
+    // muestra 2 bloques distintos ("Falta coordinar la cancha" vs "Se cayó
+    // la cancha") y sin esta marca no hay forma de saber cual mostrar. Solo
+    // lo pisa el hook de B2 (models/reservas.js) cuando una reserva
+    // vinculada se cancela -- vincularReserva lo limpia al vincular una
+    // nueva, y desvincularReserva (B5, correccion manual del capitan) NO lo
+    // toca a proposito: no es lo mismo "se cayó" que "me equivoqué de
+    // reserva y la saco yo mismo".
+    reservaDesvinculadaEn: {
+        type: Date,
+        default: null,
+    },
 }, { timestamps: true });
 
 // Evita duplicar un reto pendiente entre el mismo par retador->retado. No es

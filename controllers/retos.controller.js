@@ -278,6 +278,7 @@ const vincularReserva = async (req = request, res = response) => {
         }
 
         reto.reserva = reservaId;
+        reto.reservaDesvinculadaEn = null;
         await reto.save();
 
         return res.status(200).json({ ok: true, reto });
