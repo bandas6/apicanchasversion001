@@ -12,6 +12,7 @@ const {
     puedeResponderReto,
     puedeGestionarReto,
 } = require('../helpers/retos-social');
+const { RESULTADO_POPULATE } = require('./resultados-reto.controller');
 
 const esAdmin = (req) => tieneRol(req.usuarioAuth, ADMIN_ROLES);
 
@@ -132,7 +133,22 @@ const obtenerRetosDeEquipo = async (req = request, res = response) => {
             .sort({ createdAt: -1 })
             .populate(RETO_POPULATE);
 
-        return res.status(200).json({ ok: true, retos });
+        // Fase 5: la fila de un reto 'jugado' en la lista necesita mostrar
+        // 'Ganaron 4-2' / 'Falta tu marcador' / 'Resultado en disputa' --
+        // mismo criterio de campo hermano que jugadoresCount en
+        // equipos.controller.js, no anidado dentro del doc de Reto.
+        const idsJugados = retos.filter((r) => r.estado === 'jugado').map((r) => r._id);
+        const resultados = idsJugados.length
+            ? await ResultadoReto.find({ reto: { $in: idsJugados } }).populate(RESULTADO_POPULATE)
+            : [];
+        const resultadoPorReto = new Map(resultados.map((r) => [String(r.reto), r]));
+
+        const retosConResultado = retos.map((reto) => ({
+            ...reto.toJSON(),
+            resultado: resultadoPorReto.get(String(reto._id)) || null,
+        }));
+
+        return res.status(200).json({ ok: true, retos: retosConResultado });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
@@ -177,7 +193,7 @@ const obtenerReto = async (req = request, res = response) => {
         // dibujar el bloque de 'jugado' correcto -- no es un dato opcional
         // que se pida a demanda.
         const resultado = reto.estado === 'jugado'
-            ? await ResultadoReto.findOne({ reto: id })
+            ? await ResultadoReto.findOne({ reto: id }).populate(RESULTADO_POPULATE)
             : null;
 
         return res.status(200).json({ ok: true, reto, resultado });
