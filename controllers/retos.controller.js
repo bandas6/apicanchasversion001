@@ -26,6 +26,15 @@ const RETO_POPULATE = [
         populate: { path: 'capitan', select: 'nombre apellido nombre_archivo_imagen' },
     },
     { path: 'deporte', select: 'nombre' },
+    // La lista (L3 del brief de diseño) ya necesita fecha/hora/cancha de la
+    // reserva vinculada para la metadata de cada fila ('sáb 20 sep, 18:00 ·
+    // Jonathan') -- no solo el detalle. Sin esto `reto.reserva` llega como
+    // un ObjectId crudo en obtenerRetosDeEquipo.
+    {
+        path: 'reserva',
+        select: 'fecha horaInicio horaFin cancha estado',
+        populate: { path: 'cancha', select: 'nombre' },
+    },
 ];
 
 // Un reto solo puede vincular una reserva que ya este confirmada -- una
@@ -131,7 +140,22 @@ const obtenerRetosDeEquipo = async (req = request, res = response) => {
 const obtenerReto = async (req = request, res = response) => {
     try {
         const { id } = req.params;
-        const reto = await Reto.findById(id).populate(RETO_POPULATE).populate('reserva');
+        // El detalle (D2/D3 del brief de diseño) necesita mas de la reserva
+        // que la lista: quien la reservo ('La reservó Diego Restrepo') y el
+        // complejo (para 'Cómo llegar'), no solo cancha/fecha/hora -- por
+        // eso pisa el populate mas acotado de RETO_POPULATE con uno propio
+        // para este path.
+        const reto = await Reto.findById(id)
+            .populate(RETO_POPULATE)
+            .populate({
+                path: 'reserva',
+                select: 'fecha horaInicio horaFin estado cancha complejo usuario',
+                populate: [
+                    { path: 'cancha', select: 'nombre' },
+                    { path: 'complejo', select: 'nombre direccion ubicacion ubicacionGeo' },
+                    { path: 'usuario', select: 'nombre apellido' },
+                ],
+            });
         if (!reto) {
             return res.status(404).json({ ok: false, error: 'Reto no encontrado' });
         }

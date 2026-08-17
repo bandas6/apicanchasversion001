@@ -93,6 +93,21 @@ reto distinto, aunque ese primer reto ya no significara nada. Se agregó
 en ese check como en `obtenerReservasVinculadas` — solo un reto todavía
 vivo retiene de verdad la reserva.
 
+### Corrección: `reserva` no venía populada en la lista, y venía incompleta en el detalle
+
+Otra encontrada diseñando el frontend: `RETO_POPULATE` (usado por
+`obtenerRetosDeEquipo`, la lista) no incluía `reserva` — la fila de la
+lista (L3 del brief, "sáb 20 sep, 18:00 · Jonathan") no tenía de dónde
+sacar esos datos, llegaba el `ObjectId` crudo. Se agregó `reserva`
+(fecha/hora/cancha) a `RETO_POPULATE`.
+
+En el detalle (`obtenerReto`), el segundo `.populate('reserva')` que ya
+existía **pisaba** el populate acotado del array anterior (mismo path, la
+llamada más nueva gana) trayendo la reserva completa pero sin `cancha`,
+`complejo` ni `usuario` poblados — y el diseño del detalle pide "La
+reservó Diego Restrepo" (D3) y un botón "Cómo llegar" que necesita datos
+del complejo. Se reemplazó por un populate explícito con esos 3 anidados.
+
 ## Verificación contra el brief de diseño de Fase 4 (B1–B6)
 
 El brief (`implementar-fase4.md` del diseño) trajo 6 preguntas de
