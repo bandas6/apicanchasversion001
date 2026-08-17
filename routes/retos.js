@@ -6,6 +6,7 @@ const {
     obtenerReto,
     responderReto,
     vincularReserva,
+    desvincularReserva,
     marcarJugado,
     cancelarReto,
 } = require('../controllers/retos.controller');
@@ -48,6 +49,12 @@ router.put('/:id/reserva', [
     check('reservaId', 'No es un id valido').isMongoId(),
     validarCampos,
 ], vincularReserva);
+
+router.delete('/:id/reserva', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], desvincularReserva);
 
 router.put('/:id/jugado', [
     validarJWT,

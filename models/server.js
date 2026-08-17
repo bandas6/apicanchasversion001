@@ -3,6 +3,7 @@ const cors = require('cors');
 const { dbConnection } = require('../database/config');
 const { ensureSystemRoles } = require('../helpers/ensure-system-roles');
 const { runReservationLifecycleSweep } = require('../helpers/reservation-reputation');
+const { runRetosLifecycleSweep } = require('../helpers/retos-lifecycle');
 
 
 class Server {
@@ -89,6 +90,11 @@ class Server {
         setInterval(() => {
             runReservationLifecycleSweep().catch((error) => {
                 console.error('[Reservas] Error en cierre automatico', error.message);
+            });
+        }, 10 * 60 * 1000);
+        setInterval(() => {
+            runRetosLifecycleSweep().catch((error) => {
+                console.error('[Retos] Error en caducidad automatica', error.message);
             });
         }, 10 * 60 * 1000);
         this.app.listen(this.port, () => {

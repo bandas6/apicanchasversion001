@@ -6,7 +6,16 @@ const { Schema, model } = require('mongoose');
 // sistema. 'jugado' se llega recien cuando ademas de aceptado hay una
 // reserva vinculada cuya fecha ya paso (ver marcarJugado en el controller);
 // el resultado/puntaje en si es Fase 5, no vive en este modelo.
-const ESTADOS_RETO = ['pendiente', 'aceptado', 'rechazado', 'cancelado', 'jugado'];
+//
+// 'caducado' (B1 del brief de diseño de Fase 4): un reto que llego a
+// 'aceptado' pero nunca vinculo una reserva se cierra solo despues de
+// CADUCIDAD_DIAS dias -- sin esto queda "vivo" para siempre, ocupando la
+// lista y el badge de los 2 equipos aunque nadie vaya a coordinar la
+// cancha. Se distingue de 'cancelado' (accion explicita de un capitan)
+// porque el disparador es automatico (ver helpers/retos-lifecycle.js), no
+// una decision de nadie.
+const ESTADOS_RETO = ['pendiente', 'aceptado', 'rechazado', 'cancelado', 'jugado', 'caducado'];
+const CADUCIDAD_DIAS_ACEPTADO_SIN_RESERVA = 30;
 
 const RetoSchema = new Schema({
     equipoRetador: {
@@ -37,6 +46,13 @@ const RetoSchema = new Schema({
     respondidoPor: {
         type: Schema.Types.ObjectId,
         ref: 'Usuario',
+        default: null,
+    },
+    // Cuando el reto paso a 'aceptado' -- no se puede usar `updatedAt` para
+    // la caducidad de B1 porque ese timestamp se pisa con cualquier otro
+    // cambio posterior (vincular reserva, etc.), no solo con la aceptacion.
+    aceptadoEn: {
+        type: Date,
         default: null,
     },
     estado: {
@@ -83,4 +99,8 @@ RetoSchema.methods.toJSON = function () {
     return reto;
 };
 
-module.exports = { Reto: model('Reto', RetoSchema), ESTADOS_RETO };
+module.exports = {
+    Reto: model('Reto', RetoSchema),
+    ESTADOS_RETO,
+    CADUCIDAD_DIAS_ACEPTADO_SIN_RESERVA,
+};

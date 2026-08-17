@@ -14,10 +14,15 @@ Fase 3 (backend primero, diseño despues).
 - `deporte`: denormalizado desde `equipoRetador.deporte` al crear el reto
   (mismo criterio que `EquipoMembresia.deporte` en Fase 1) — los 2 equipos
   tienen que jugar el mismo deporte, se valida al crear (`puedenRetarse`).
-- `estado`: `pendiente | aceptado | rechazado | cancelado | jugado` (los 5
-  del plan). **`jugado` no implica resultado/puntaje** — eso es Fase 5
-  (`ResultadoReto`, doble confirmación de los capitanes). Acá solo marca que
-  el partido ya se disputó, como precondición para que Fase 5 tenga sentido.
+- `estado`: `pendiente | aceptado | rechazado | cancelado | jugado | caducado`
+  (los 5 del plan + `caducado`, agregado en la verificación contra el brief
+  de diseño — ver B1 abajo). **`jugado` no implica resultado/puntaje** — eso
+  es Fase 5 (`ResultadoReto`, doble confirmación de los capitanes). Acá solo
+  marca que el partido ya se disputó, como precondición para que Fase 5
+  tenga sentido.
+- `aceptadoEn`: fecha en que el reto pasó a `aceptado` (no se puede usar
+  `updatedAt`: ese timestamp se pisa con cualquier save posterior, no solo
+  con la aceptación). Alimenta la caducidad de B1.
 - `mensaje`/`fechaPropuesta`: informativos, no atan nada — lo que fija
   cuándo y dónde se juega de verdad es la reserva vinculada.
 - `reserva`: ref a `Reserva`, `null` hasta que se vincula (ver abajo).
@@ -66,6 +71,51 @@ testeadas con `node --test` (este repo no tiene `mongodb-memory-server`).
 - `DELETE /retos/:id` — cancela (cualquiera de los 2 capitanes, o admin),
   solo si el reto sigue `pendiente` o `aceptado` (no se cancela algo ya
   jugado/rechazado/cancelado).
+- `DELETE /retos/:id/reserva` — desvincula la reserva sin cancelar el reto
+  (B5 del brief de diseño): un capitán vinculó la reserva equivocada y
+  quiere corregirla sin perder la aceptación ni el mensaje del reto.
+
+## Verificación contra el brief de diseño de Fase 4 (B1–B6)
+
+El brief (`implementar-fase4.md` del diseño) trajo 6 preguntas de
+verificación antes de construir las pantallas. Tres ya estaban resueltas
+por el backend original de esta fase; tres exigieron agregarlo:
+
+- **B1 (caducidad de un `aceptado` sin reserva) — agregado.** Sin esto, 2
+  capitanes que se aceptan y nunca coordinan la cancha dejan un reto vivo
+  para siempre. Se implementó tal cual lo proponía el brief: 30 días desde
+  `aceptadoEn`, nuevo estado `caducado` (distinto de `cancelado` porque el
+  disparador es automático, no una decisión de un capitán), barrido
+  periódico cada 10 min (`helpers/retos-lifecycle.js:runRetosLifecycleSweep`,
+  wireado en `models/server.js` con el mismo `setInterval` que ya usa
+  `runReservationLifecycleSweep`).
+- **B2 (reserva cancelada desvincula el reto) — agregado.** Se centralizó
+  en el modelo `Reserva` (`models/reservas.js`), no en cada controller que
+  muta `estado`: un hook `pre('save')`/`post('save')` detecta cuándo
+  `estado` deja de ser `confirmada`/`completada` y, si hay algún `Reto`
+  `aceptado` apuntando a esa reserva, le pone `reserva: null`. Un solo lugar
+  cubre los ~5 call sites dispersos que cambian el estado de una reserva
+  (`controllers/reservas.controller.js`, `helpers/reservation-reputation.js`)
+  sin tener que acordarse de tocar cada uno. **No incluye el aviso a los 2
+  capitanes** que pedía el brief — eso es notificaciones (Fase 7), fuera de
+  alcance acá; la UI puede mostrar el nuevo estado, pero no hay push/in-app
+  todavía.
+- **B3 (una reserva no puede estar en 2 retos) — ya estaba.**
+  `vincularReserva` ya rechazaba (400) si otra `Reto` distinta apuntaba a
+  la misma reserva.
+- **B4 (quién marca "jugado") — ya estaba, coincide con lo propuesto.**
+  Cualquiera de los 2 capitanes, sin resolución de conflictos — el primero
+  que llama define el estado (`marcarJugado`, `puedeGestionarReto`).
+- **B5 (desvincular sin cancelar el reto) — agregado.** Ver
+  `DELETE /retos/:id/reserva` arriba.
+- **B6 (mismo deporte obligatorio) — ya estaba.** `puedenRetarse` lo exige
+  al crear el reto; `vincularReserva` además valida que la reserva sea del
+  mismo deporte que el reto.
+
+**Nota del brief que se adoptó tal cual**: la línea "El resultado todavía
+no se puede confirmar" en el estado `jugado` se saca del diseño de la
+pantalla — anuncia una fase que no existe y genera la pregunta que no
+queremos responder todavía. `jugado` no dice nada sobre el resultado.
 
 ## Decisiones explícitas (para no "suponer")
 
@@ -94,8 +144,11 @@ testeadas con `node --test` (este repo no tiene `mongodb-memory-server`).
 - Notificaciones de reto nuevo/aceptado/rechazado — Fase 7 del plan
   (extiende el sistema de la entrega 31b), fuera de alcance acá.
 - Sin límite de retos pendientes simultáneos por equipo, ni expiración
-  automática de un reto `pendiente` sin responder — si en el uso real hace
-  falta, se agrega después.
+  automática de un reto `pendiente` sin responder (la caducidad de B1 solo
+  aplica a `aceptado` sin reserva, no a `pendiente`) — si en el uso real
+  hace falta, se agrega después.
+- Sin aviso a los 2 capitanes cuando B2 desvincula una reserva cancelada —
+  ver nota de B2 arriba, es trabajo de notificaciones (Fase 7).
 
 ## Riesgos / pendiente de verificar
 
@@ -109,3 +162,9 @@ testeadas con `node --test` (este repo no tiene `mongodb-memory-server`).
   contra `equipoRetador.capitan`/`equipoRetado.capitan` tal cual vienen del
   modelo (sin popular en profundidad) — no se probó con documentos reales
   de Mongo, solo revisión manual del código.
+- El hook de B2 (`models/reservas.js`) y el sweep de B1
+  (`helpers/retos-lifecycle.js`) son lógica que solo se ejerce con
+  documentos reales de Mongo (`updateMany`, hooks de Mongoose) — no hay
+  test unitario posible para ellos sin `mongodb-memory-server` (no
+  instalado en este repo, mismo caveat de siempre). Se verificó con
+  lectura de código y el smoke test de `Server`, no con ejecución real.

@@ -172,6 +172,9 @@ const responderReto = async (req = request, res = response) => {
 
         reto.estado = aceptar ? 'aceptado' : 'rechazado';
         reto.respondidoPor = req.usuarioAuth._id;
+        if (aceptar) {
+            reto.aceptadoEn = new Date();
+        }
         await reto.save();
 
         return res.status(200).json({ ok: true, reto });
@@ -236,6 +239,47 @@ const vincularReserva = async (req = request, res = response) => {
         }
 
         reto.reserva = reservaId;
+        await reto.save();
+
+        return res.status(200).json({ ok: true, reto });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+// B5 (brief de diseño de Fase 4): un capitan vinculo la reserva equivocada
+// y quiere corregirla sin cancelar el reto entero (que borraria tambien la
+// aceptacion y el mensaje). Mismos autorizados que vincular.
+const desvincularReserva = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+
+        const reto = await Reto.findById(id)
+            .populate('equipoRetador', 'capitan')
+            .populate('equipoRetado', 'capitan');
+        if (!reto) {
+            return res.status(404).json({ ok: false, error: 'Reto no encontrado' });
+        }
+
+        const autorizado = puedeGestionarReto({
+            capitanRetadorId: reto.equipoRetador.capitan,
+            capitanRetadoId: reto.equipoRetado.capitan,
+            usuarioId: req.usuarioAuth._id,
+            esAdmin: esAdmin(req),
+        });
+        if (!autorizado) {
+            return res.status(403).json({ ok: false, error: 'No podes coordinar la reserva de este reto' });
+        }
+
+        if (reto.estado !== 'aceptado') {
+            return res.status(400).json({ ok: false, error: 'El reto tiene que estar aceptado' });
+        }
+
+        if (!reto.reserva) {
+            return res.status(400).json({ ok: false, error: 'Este reto no tiene una reserva vinculada' });
+        }
+
+        reto.reserva = null;
         await reto.save();
 
         return res.status(200).json({ ok: true, reto });
@@ -327,6 +371,7 @@ module.exports = {
     obtenerReto,
     responderReto,
     vincularReserva,
+    desvincularReserva,
     marcarJugado,
     cancelarReto,
 };
