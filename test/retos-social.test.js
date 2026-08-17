@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const Usuario = require('../models/usuarios');
+const { obtenerCapitanId } = require('../controllers/retos.controller');
 
 const {
     puedenRetarse,
@@ -77,6 +79,33 @@ test('puedeGestionarReto: cualquiera de los 2 capitanes puede, un tercero no', (
 test('puedeGestionarReto: un admin siempre puede', () => {
     assert.equal(
         puedeGestionarReto({ capitanRetadorId: 'c1', capitanRetadoId: 'c2', usuarioId: 'admin1', esAdmin: true }),
+        true,
+    );
+});
+
+test('obtenerCapitanId: extrae el _id real cuando el capitan viene poblado', () => {
+    const capitan = new Usuario({ nombre: 'Test', apellido: 'User', correo: 'a@a.com' });
+    const uid = String(capitan._id);
+
+    assert.equal(
+        puedeGestionarReto({
+            capitanRetadorId: capitan,
+            capitanRetadoId: 'c2',
+            usuarioId: uid,
+            esAdmin: false,
+        }),
+        false,
+        'String() sobre el documento poblado no coincide con su ObjectId',
+    );
+
+    assert.equal(String(obtenerCapitanId({ capitan })), uid);
+    assert.equal(
+        puedeGestionarReto({
+            capitanRetadorId: obtenerCapitanId({ capitan }),
+            capitanRetadoId: 'c2',
+            usuarioId: uid,
+            esAdmin: false,
+        }),
         true,
     );
 });

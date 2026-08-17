@@ -16,6 +16,8 @@ const { RESULTADO_POPULATE } = require('./resultados-reto.controller');
 
 const esAdmin = (req) => tieneRol(req.usuarioAuth, ADMIN_ROLES);
 
+const obtenerCapitanId = (equipo) => equipo?.capitan?._id ?? equipo?.capitan;
+
 const RETO_POPULATE = [
     {
         path: 'equipoRetador',
@@ -178,8 +180,8 @@ const obtenerReto = async (req = request, res = response) => {
         }
 
         const autorizado = puedeGestionarReto({
-            capitanRetadorId: reto.equipoRetador.capitan,
-            capitanRetadoId: reto.equipoRetado.capitan,
+            capitanRetadorId: obtenerCapitanId(reto.equipoRetador),
+            capitanRetadoId: obtenerCapitanId(reto.equipoRetado),
             usuarioId: req.usuarioAuth._id,
             esAdmin: esAdmin(req),
         });
@@ -470,4 +472,5 @@ module.exports = {
     marcarJugado,
     cancelarReto,
     obtenerReservasVinculadas,
+    obtenerCapitanId,
 };
