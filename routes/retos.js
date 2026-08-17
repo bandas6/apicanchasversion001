@@ -6,9 +6,15 @@ const {
     obtenerReto,
     responderReto,
     vincularReserva,
+    desvincularReserva,
     marcarJugado,
     cancelarReto,
+    obtenerReservasVinculadas,
 } = require('../controllers/retos.controller');
+const {
+    reportarResultado,
+    obtenerResultado,
+} = require('../controllers/resultados-reto.controller');
 const { validarJWT } = require('../middlewares/validar-jwt');
 const { validarCampos } = require('../middlewares/validar-campos');
 
@@ -21,6 +27,8 @@ router.get('/equipo/:equipoId', [
     check('equipoId', 'No es un id valido').isMongoId(),
     validarCampos,
 ], obtenerRetosDeEquipo);
+
+router.get('/reservas-vinculadas', [validarJWT], obtenerReservasVinculadas);
 
 router.post('/', [
     validarJWT,
@@ -49,6 +57,12 @@ router.put('/:id/reserva', [
     validarCampos,
 ], vincularReserva);
 
+router.delete('/:id/reserva', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], desvincularReserva);
+
 router.put('/:id/jugado', [
     validarJWT,
     check('id', 'No es un id valido').isMongoId(),
@@ -60,5 +74,19 @@ router.delete('/:id', [
     check('id', 'No es un id valido').isMongoId(),
     validarCampos,
 ], cancelarReto);
+
+router.post('/:id/resultado', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    check('golesRetador', 'Los goles del equipo retador son obligatorios').isInt({ min: 0 }),
+    check('golesRetado', 'Los goles del equipo retado son obligatorios').isInt({ min: 0 }),
+    validarCampos,
+], reportarResultado);
+
+router.get('/:id/resultado', [
+    validarJWT,
+    check('id', 'No es un id valido').isMongoId(),
+    validarCampos,
+], obtenerResultado);
 
 module.exports = router;

@@ -167,6 +167,33 @@ ReservasSchema.index({ usuario: 1, fecha: -1 });
 ReservasSchema.index({ estado: 1, fecha: 1, horaFin: 1 });
 ReservasSchema.index({ reviewWindowEndsAt: 1 });
 
+// B2 (brief de diseño de Fase 4, equipos-social-fase4.md): si la reserva que
+// un reto tiene vinculada deja de ser "real" (se cancela, expira, etc.), el
+// reto tiene que volver a 'aceptado' sin reserva -- si no, el detalle del
+// reto sigue mostrando una cancha que ya no existe. Se centraliza aca (un
+// solo lugar, en el modelo) en vez de en cada uno de los varios call sites
+// que mutan `estado` (controllers/reservas.controller.js,
+// helpers/reservation-reputation.js), para no depender de que cada uno se
+// acuerde de avisarle a Reto.
+const ESTADOS_RESERVA_VIGENTE_PARA_RETO = ['confirmada', 'completada'];
+
+ReservasSchema.pre('save', function (next) {
+    this.$locals = this.$locals || {};
+    this.$locals.estadoModificado = this.isModified('estado');
+    next();
+});
+
+ReservasSchema.post('save', async function (doc) {
+    if (!doc.$locals?.estadoModificado) return;
+    if (ESTADOS_RESERVA_VIGENTE_PARA_RETO.includes(doc.estado)) return;
+
+    const { Reto } = require('./retos');
+    await Reto.updateMany(
+        { reserva: doc._id, estado: 'aceptado' },
+        { $set: { reserva: null, reservaDesvinculadaEn: new Date() } },
+    );
+});
+
 ReservasSchema.methods.toJSON = function () {
     const { __v, _id, ...reserva } = this.toObject();
     reserva.uid = _id;

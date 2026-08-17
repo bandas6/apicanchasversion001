@@ -1,5 +1,6 @@
 const { request, response } = require('express');
 const { Reto } = require('../models/retos');
+const { ResultadoReto } = require('../models/resultados-reto');
 const Equipos = require('../models/equipos');
 const Usuarios = require('../models/usuarios');
 const Reserva = require('../models/reservas');
@@ -26,12 +27,28 @@ const RETO_POPULATE = [
         populate: { path: 'capitan', select: 'nombre apellido nombre_archivo_imagen' },
     },
     { path: 'deporte', select: 'nombre' },
+    // La lista (L3 del brief de diseño) ya necesita fecha/hora/cancha de la
+    // reserva vinculada para la metadata de cada fila ('sáb 20 sep, 18:00 ·
+    // Jonathan') -- no solo el detalle. Sin esto `reto.reserva` llega como
+    // un ObjectId crudo en obtenerRetosDeEquipo.
+    {
+        path: 'reserva',
+        select: 'fecha horaInicio horaFin cancha estado',
+        populate: { path: 'cancha', select: 'nombre' },
+    },
 ];
 
 // Un reto solo puede vincular una reserva que ya este confirmada -- una
 // reserva 'pendiente' (todavia esperando que el complejo la confirme) no es
 // todavia "real" en el sentido de la decision fundacional 2 del plan.
 const ESTADO_RESERVA_VINCULABLE = 'confirmada';
+
+// Que estados de reto "retienen" de verdad la reserva que tienen vinculada
+// -- un reto cancelado/rechazado/caducado no deberia seguir bloqueando que
+// esa misma reserva se use en otro reto distinto. Se usa tanto para el
+// check de "reserva ya usada" (vincularReserva) como para el picker del
+// frontend (obtenerReservasVinculadas).
+const ESTADOS_RETO_QUE_RETIENEN_RESERVA = ['aceptado', 'jugado'];
 
 const crearReto = async (req = request, res = response) => {
     try {
@@ -124,7 +141,22 @@ const obtenerRetosDeEquipo = async (req = request, res = response) => {
 const obtenerReto = async (req = request, res = response) => {
     try {
         const { id } = req.params;
-        const reto = await Reto.findById(id).populate(RETO_POPULATE).populate('reserva');
+        // El detalle (D2/D3 del brief de diseño) necesita mas de la reserva
+        // que la lista: quien la reservo ('La reservó Diego Restrepo') y el
+        // complejo (para 'Cómo llegar'), no solo cancha/fecha/hora -- por
+        // eso pisa el populate mas acotado de RETO_POPULATE con uno propio
+        // para este path.
+        const reto = await Reto.findById(id)
+            .populate(RETO_POPULATE)
+            .populate({
+                path: 'reserva',
+                select: 'fecha horaInicio horaFin estado cancha complejo usuario',
+                populate: [
+                    { path: 'cancha', select: 'nombre' },
+                    { path: 'complejo', select: 'nombre direccion ubicacion ubicacionGeo' },
+                    { path: 'usuario', select: 'nombre apellido' },
+                ],
+            });
         if (!reto) {
             return res.status(404).json({ ok: false, error: 'Reto no encontrado' });
         }
@@ -139,7 +171,16 @@ const obtenerReto = async (req = request, res = response) => {
             return res.status(403).json({ ok: false, error: 'No podes ver este reto' });
         }
 
-        return res.status(200).json({ ok: true, reto });
+        // Fase 5: se embebe aca (en vez de que el frontend pegue un segundo
+        // request a GET /retos/:id/resultado) porque el detalle del reto
+        // SIEMPRE necesita saber si ya hay un resultado reportado para
+        // dibujar el bloque de 'jugado' correcto -- no es un dato opcional
+        // que se pida a demanda.
+        const resultado = reto.estado === 'jugado'
+            ? await ResultadoReto.findOne({ reto: id })
+            : null;
+
+        return res.status(200).json({ ok: true, reto, resultado });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
@@ -172,6 +213,9 @@ const responderReto = async (req = request, res = response) => {
 
         reto.estado = aceptar ? 'aceptado' : 'rechazado';
         reto.respondidoPor = req.usuarioAuth._id;
+        if (aceptar) {
+            reto.aceptadoEn = new Date();
+        }
         await reto.save();
 
         return res.status(200).json({ ok: true, reto });
@@ -230,12 +274,62 @@ const vincularReserva = async (req = request, res = response) => {
             return res.status(400).json({ ok: false, error: 'Solo se puede vincular una reserva confirmada' });
         }
 
-        const reservaYaUsada = await Reto.findOne({ reserva: reservaId, _id: { $ne: reto._id } });
+        // Solo un reto 'vivo' (aceptado/jugado) sostiene de verdad el
+        // vinculo -- uno cancelado/rechazado/caducado que alguna vez tuvo
+        // esta reserva no deberia seguir bloqueando que se reuse en otro
+        // reto distinto.
+        const reservaYaUsada = await Reto.findOne({
+            reserva: reservaId,
+            _id: { $ne: reto._id },
+            estado: { $in: ESTADOS_RETO_QUE_RETIENEN_RESERVA },
+        });
         if (reservaYaUsada) {
             return res.status(400).json({ ok: false, error: 'Esa reserva ya esta vinculada a otro reto' });
         }
 
         reto.reserva = reservaId;
+        reto.reservaDesvinculadaEn = null;
+        await reto.save();
+
+        return res.status(200).json({ ok: true, reto });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
+// B5 (brief de diseño de Fase 4): un capitan vinculo la reserva equivocada
+// y quiere corregirla sin cancelar el reto entero (que borraria tambien la
+// aceptacion y el mensaje). Mismos autorizados que vincular.
+const desvincularReserva = async (req = request, res = response) => {
+    try {
+        const { id } = req.params;
+
+        const reto = await Reto.findById(id)
+            .populate('equipoRetador', 'capitan')
+            .populate('equipoRetado', 'capitan');
+        if (!reto) {
+            return res.status(404).json({ ok: false, error: 'Reto no encontrado' });
+        }
+
+        const autorizado = puedeGestionarReto({
+            capitanRetadorId: reto.equipoRetador.capitan,
+            capitanRetadoId: reto.equipoRetado.capitan,
+            usuarioId: req.usuarioAuth._id,
+            esAdmin: esAdmin(req),
+        });
+        if (!autorizado) {
+            return res.status(403).json({ ok: false, error: 'No podes coordinar la reserva de este reto' });
+        }
+
+        if (reto.estado !== 'aceptado') {
+            return res.status(400).json({ ok: false, error: 'El reto tiene que estar aceptado' });
+        }
+
+        if (!reto.reserva) {
+            return res.status(400).json({ ok: false, error: 'Este reto no tiene una reserva vinculada' });
+        }
+
+        reto.reserva = null;
         await reto.save();
 
         return res.status(200).json({ ok: true, reto });
@@ -321,12 +415,43 @@ const cancelarReto = async (req = request, res = response) => {
     }
 };
 
+// Picker de "Vincular reserva" (pantalla 34d/35d del diseño): antes de
+// listar mis reservas confirmadas para elegir, el frontend necesita saber
+// cuales ya estan vinculadas a un reto vivo, para mostrarlas deshabilitadas
+// en vez de dejar que el usuario elija una y recien enterarse en el 400 de
+// vincularReserva.
+const obtenerReservasVinculadas = async (req = request, res = response) => {
+    try {
+        const ids = String(req.query.ids || '')
+            .split(',')
+            .map((id) => id.trim())
+            .filter(Boolean);
+
+        if (ids.length === 0) {
+            return res.status(200).json({ ok: true, vinculadas: [] });
+        }
+
+        const retos = await Reto.find({
+            reserva: { $in: ids },
+            estado: { $in: ESTADOS_RETO_QUE_RETIENEN_RESERVA },
+        }).select('reserva');
+
+        const vinculadas = [...new Set(retos.map((reto) => String(reto.reserva)))];
+
+        return res.status(200).json({ ok: true, vinculadas });
+    } catch (error) {
+        return res.status(500).json({ ok: false, error: error.message });
+    }
+};
+
 module.exports = {
     crearReto,
     obtenerRetosDeEquipo,
     obtenerReto,
     responderReto,
     vincularReserva,
+    desvincularReserva,
     marcarJugado,
     cancelarReto,
+    obtenerReservasVinculadas,
 };
