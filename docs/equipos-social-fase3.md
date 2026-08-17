@@ -88,6 +88,30 @@ lo que decide que boton mostrar en el detalle publico ("Solicitar unirme"
 vs "Ya sos parte" vs "Solicitud enviada" vs deshabilitado) sin que el
 frontend tenga que cruzar esto a mano contra `Mis equipos`/`Mis solicitudes`.
 
+## 2026-08-17 (verificacion contra el brief de diseño — B3/B4 completos)
+
+El brief de diseño de las pantallas (33a-d) trajo su propio checklist de
+verificacion (B1-B5), igual criterio que los V1-V6 de la Fase 2. Dos de los
+5 puntos exigieron completar el backend antes de poder construir el
+frontend con la copia que el diseño ya escribió:
+
+- **B3 (bloqueo incompleto):** el bloqueo ya era reciproco y ya filtraba
+  `GET /jugadores`/`GET /equipos`, pero **no** el roster de `GET /equipos/:id`
+  ni las invitaciones/solicitudes -- la hoja de bloqueo promete "no van a
+  poder verse en la búsqueda ni mandarse invitaciones o solicitudes", y esa
+  segunda mitad no era cierta todavia. Se agrego:
+  - Roster de `obtenerEquipo`: excluye usuarios con bloqueo reciproco,
+    **solo para quien no pertenece al equipo** (a un companero de equipo
+    real no se lo oculta de tu propio plantel por un bloqueo posterior).
+  - `invitarJugador`/`solicitarUnirseEquipo`: rechazan (400) si hay bloqueo
+    reciproco entre el capitan y el otro usuario.
+  - Nuevo helper puro `hayBloqueoEntrePar` en `helpers/bloqueos.js` (con
+    tests) para no repetir la logica de "¿cualquiera de los 2 bloqueo al
+    otro?" en los 3 lugares.
+- **B4 (dónde se desbloquea):** `GET /usuarios/me` ahora popula
+  `usuariosBloqueados` (nombre, apellido, foto) -- antes devolvia solo los
+  ObjectId crudos, sin nada para dibujar una lista de "Desbloquear".
+
 ## No implementado en esta fase (a proposito)
 
 - **Nivel de juego (`nivelJuego`) no se usa como filtro de busqueda todavia**

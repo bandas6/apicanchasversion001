@@ -320,9 +320,13 @@ const obtenerJugadoresPublicos = async (req = require, res = response) => {
 const obtenerMiUsuario = async (req = require, res = response) => {
     try {
         const usuarioId = req.usuarioAuth?._id;
+        // Fase 3 (B4): poblado para que la pantalla de 'Desbloquear' tenga
+        // nombre/foto sin un endpoint aparte -- son como mucho unos pocos
+        // usuarios, no vale la pena paginar esto.
         const usuario = await Usuarios.findById(usuarioId)
             .select('-password')
-            .select('__v');
+            .select('__v')
+            .populate('usuariosBloqueados', 'nombre apellido nombre_archivo_imagen');
 
         if (!usuario) {
             return res.status(404).json({

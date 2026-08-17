@@ -6,7 +6,7 @@ const Usuarios = require('../models/usuarios');
 const { ADMIN_ROLES, tieneRol } = require('../middlewares/validar-roles');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
 const { CATALOGOS_PERFIL, normalizeCatalogValue } = require('../helpers/profile-catalogs');
-const { resolveIdsBloqueados } = require('../helpers/bloqueos');
+const { resolveIdsBloqueados, hayBloqueoEntrePar } = require('../helpers/bloqueos');
 const {
     puedeGestionarEquipo,
     puedeResponderMembresia,
@@ -211,9 +211,26 @@ const obtenerEquipo = async (req = request, res = response) => {
             : false;
         const puedeVerPendientes = perteneceAlEquipo || Boolean(req.usuarioAuth && esAdmin(req));
 
-        const rosterVisible = puedeVerPendientes
+        let rosterVisible = puedeVerPendientes
             ? roster
             : roster.filter((m) => m.estado === 'aceptada');
+
+        // Fase 3 (B3): un visitante que no pertenece al equipo no deberia
+        // ver en el plantel a alguien con quien tiene bloqueo reciproco --
+        // no aplica si ya sos parte del equipo (ocultarte a un companero de
+        // tu propio plantel rompe la funcionalidad basica del equipo, el
+        // bloqueo es sobre descubrimiento, no sobre membresias existentes).
+        if (usuarioAuthId && !perteneceAlEquipo) {
+            const meBloquearon = await Usuarios.find({ usuariosBloqueados: usuarioAuthId }).select('_id');
+            const idsBloqueo = resolveIdsBloqueados(
+                req.usuarioAuth.usuariosBloqueados || [],
+                meBloquearon.map((u) => u._id),
+            );
+            if (idsBloqueo.length > 0) {
+                rosterVisible = rosterVisible.filter((m) =>
+                    !idsBloqueo.includes(String(m.usuario?._id || m.usuario)));
+            }
+        }
 
         // Fase 3: la busqueda publica necesita saber que boton mostrar en el
         // detalle (Solicitar unirme / Ya sos parte / Solicitud enviada /
@@ -405,6 +422,14 @@ const solicitarUnirseEquipo = async (req = request, res = response) => {
             return res.status(400).json({ ok: false, error: 'Ya sos el capitan de este equipo' });
         }
 
+        // B3 (docs/equipos-social-fase3.md): si hay bloqueo reciproco con el
+        // capitan, no se puede ni pedir entrar -- la hoja de bloqueo promete
+        // 'no van a poder mandarse invitaciones o solicitudes'.
+        const capitanParaBloqueo = await Usuarios.findById(equipo.capitan).select('usuariosBloqueados');
+        if (hayBloqueoEntrePar(req.usuarioAuth, capitanParaBloqueo)) {
+            return res.status(400).json({ ok: false, error: 'No podes enviar una solicitud a este equipo' });
+        }
+
         if (await tieneEquipoAceptadoEnDeporte(usuarioId, equipo.deporte)) {
             return res.status(400).json({ ok: false, error: 'Ya tenes un equipo de este deporte' });
         }
@@ -452,9 +477,15 @@ const invitarJugador = async (req = request, res = response) => {
         // filtra por rol:'USER', pero este endpoint recibe el usuarioId
         // directo del body -- sin este chequeo, nada impide invitar a un
         // ADMIN/DEV pasando su id a mano.
-        const usuarioObjetivo = await Usuarios.findById(usuarioId).select('rol estado');
+        const usuarioObjetivo = await Usuarios.findById(usuarioId).select('rol estado usuariosBloqueados');
         if (!usuarioObjetivo || !usuarioObjetivo.estado || !puedeParticiparEnEquipos({ rol: usuarioObjetivo.rol })) {
             return res.status(400).json({ ok: false, error: 'Solo podes invitar a usuarios jugadores' });
+        }
+
+        // B3: bloqueo reciproco entre quien invita (el capitan) y el
+        // invitado impide la invitacion, misma promesa que en solicitudes.
+        if (hayBloqueoEntrePar(req.usuarioAuth, usuarioObjetivo)) {
+            return res.status(400).json({ ok: false, error: 'No podes invitar a este jugador' });
         }
 
         const yaPendiente = await EquipoMembresia.findOne({ equipo: id, usuario: usuarioId, estado: 'pendiente' });
