@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const Usuario = require('../models/usuarios');
-const { obtenerCapitanId } = require('../controllers/retos.controller');
+const { obtenerCapitanId, obtenerDeporteReservaId, esMismoDeporte } = require('../controllers/retos.controller');
 
 const {
     puedenRetarse,
@@ -107,5 +107,33 @@ test('obtenerCapitanId: extrae el _id real cuando el capitan viene poblado', () 
             esAdmin: false,
         }),
         true,
+    );
+});
+
+test('obtenerDeporteReservaId: usa el deporte de la cancha si la reserva antigua no lo tiene', () => {
+    assert.equal(
+        obtenerDeporteReservaId({ deporte: 'basket-reserva', cancha: { deporte: 'basket-cancha' } }),
+        'basket-reserva',
+    );
+    assert.equal(
+        obtenerDeporteReservaId({ cancha: { deporte: 'basket-cancha' } }),
+        'basket-cancha',
+    );
+});
+
+test('esMismoDeporte: compara por nombre normalizado si faltan ids legacy', () => {
+    assert.equal(
+        esMismoDeporte({
+            reserva: { cancha: { tipoDeporte: 'Basketball' } },
+            reto: { deporte: { nombre: 'Baloncesto' } },
+        }),
+        true,
+    );
+    assert.equal(
+        esMismoDeporte({
+            reserva: { cancha: { tipoDeporte: 'Basketball' } },
+            reto: { deporte: { nombre: 'Futbol 5' } },
+        }),
+        false,
     );
 });

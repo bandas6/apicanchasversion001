@@ -595,6 +595,10 @@ const guardarReserva = async (req = request, res = response) => {
             });
         }
 
+        if (!data.deporte && cancha.deporte) {
+            data.deporte = cancha.deporte;
+        }
+
         const slotConfig = resolveCanchaSlotConfig(cancha);
         const requestedDuration = endMinutes - startMinutes;
 

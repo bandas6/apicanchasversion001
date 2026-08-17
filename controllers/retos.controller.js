@@ -17,6 +17,29 @@ const { RESULTADO_POPULATE } = require('./resultados-reto.controller');
 const esAdmin = (req) => tieneRol(req.usuarioAuth, ADMIN_ROLES);
 
 const obtenerCapitanId = (equipo) => equipo?.capitan?._id ?? equipo?.capitan;
+const obtenerDeporteId = (deporte) => deporte?._id ?? deporte;
+const obtenerDeporteReservaId = (reserva) =>
+    obtenerDeporteId(reserva?.deporte) ?? obtenerDeporteId(reserva?.cancha?.deporte);
+const normalizarDeporteNombre = (nombre = '') => {
+    const normalized = String(nombre).trim().toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    if (normalized.includes('basket') || normalized.includes('baloncesto')) return 'basket';
+    return normalized;
+};
+const obtenerDeporteReservaNombre = (reserva) =>
+    reserva?.deporte?.nombre ?? reserva?.cancha?.deporte?.nombre ?? reserva?.cancha?.tipoDeporte ?? '';
+const esMismoDeporte = ({ reserva, reto }) => {
+    const reservaDeporteId = obtenerDeporteReservaId(reserva);
+    const retoDeporteId = obtenerDeporteId(reto?.deporte);
+    if (reservaDeporteId && retoDeporteId && String(reservaDeporteId) === String(retoDeporteId)) {
+        return true;
+    }
+
+    const reservaNombre = normalizarDeporteNombre(obtenerDeporteReservaNombre(reserva));
+    const retoNombre = normalizarDeporteNombre(reto?.deporte?.nombre);
+    return reservaNombre !== '' && reservaNombre === retoNombre;
+};
 
 const RETO_POPULATE = [
     {
@@ -211,7 +234,8 @@ const responderReto = async (req = request, res = response) => {
 
         const reto = await Reto.findById(id)
             .populate('equipoRetador', 'capitan')
-            .populate('equipoRetado', 'capitan');
+            .populate('equipoRetado', 'capitan')
+            .populate('deporte', 'nombre');
         if (!reto) {
             return res.status(404).json({ ok: false, error: 'Reto no encontrado' });
         }
@@ -268,7 +292,9 @@ const vincularReserva = async (req = request, res = response) => {
             return res.status(400).json({ ok: false, error: 'El reto tiene que estar aceptado para vincular una reserva' });
         }
 
-        const reserva = await Reserva.findById(reservaId);
+        const reserva = await Reserva.findById(reservaId)
+            .populate('deporte', 'nombre')
+            .populate('cancha', 'deporte tipoDeporte');
         if (!reserva) {
             return res.status(404).json({ ok: false, error: 'Reserva no encontrada' });
         }
@@ -284,7 +310,7 @@ const vincularReserva = async (req = request, res = response) => {
             return res.status(400).json({ ok: false, error: 'La reserva tiene que estar a nombre de uno de los 2 capitanes' });
         }
 
-        if (String(reserva.deporte) !== String(reto.deporte)) {
+        if (!esMismoDeporte({ reserva, reto })) {
             return res.status(400).json({ ok: false, error: 'La reserva es de un deporte distinto al del reto' });
         }
 
@@ -473,4 +499,6 @@ module.exports = {
     cancelarReto,
     obtenerReservasVinculadas,
     obtenerCapitanId,
+    obtenerDeporteReservaId,
+    esMismoDeporte,
 };
