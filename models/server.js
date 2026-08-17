@@ -19,6 +19,7 @@ class Server {
             jugadores: '/api/jugadores',
             deportes: '/api/deportes',
             equipos: '/api/equipos',
+            retos: '/api/retos',
             reportes: '/api/reportes',
             listasMaestras: '/api/listas-maestras',
             complejos: '/api/complejos',
@@ -67,6 +68,7 @@ class Server {
         this.app.use(this.paths.auth, require('../routes/auth'));
         this.app.use(this.paths.deportes, require('../routes/deportes'));
         this.app.use(this.paths.equipos, require('../routes/equipos'));
+        this.app.use(this.paths.retos, require('../routes/retos'));
         this.app.use(this.paths.reportes, require('../routes/reportes'));
         this.app.use(this.paths.listasMaestras, require('../routes/listas-maestras'));
         this.app.use(this.paths.complejos, require('../routes/complejos'));
