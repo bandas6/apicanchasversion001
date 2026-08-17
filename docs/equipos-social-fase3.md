@@ -79,7 +79,48 @@ podido ver a quien invito un equipo. Se cambio la ruta a
 ese equipo especifico. Comportamiento sin cambios para quien ya pertenece
 al equipo (Fase 2 sigue funcionando igual).
 
+### miEstado en el detalle de equipo
+
+`GET /equipos/:id`, cuando hay sesion, ahora tambien devuelve `miEstado`:
+`'capitan' | 'miembro' | 'solicitud_pendiente' | 'invitacion_pendiente' |
+'ya_tengo_equipo_de_este_deporte' | 'disponible'` (o `null` sin sesion). Es
+lo que decide que boton mostrar en el detalle publico ("Solicitar unirme"
+vs "Ya sos parte" vs "Solicitud enviada" vs deshabilitado) sin que el
+frontend tenga que cruzar esto a mano contra `Mis equipos`/`Mis solicitudes`.
+
+## 2026-08-17 (verificacion contra el brief de diseño — B3/B4 completos)
+
+El brief de diseño de las pantallas (33a-d) trajo su propio checklist de
+verificacion (B1-B5), igual criterio que los V1-V6 de la Fase 2. Dos de los
+5 puntos exigieron completar el backend antes de poder construir el
+frontend con la copia que el diseño ya escribió:
+
+- **B3 (bloqueo incompleto):** el bloqueo ya era reciproco y ya filtraba
+  `GET /jugadores`/`GET /equipos`, pero **no** el roster de `GET /equipos/:id`
+  ni las invitaciones/solicitudes -- la hoja de bloqueo promete "no van a
+  poder verse en la búsqueda ni mandarse invitaciones o solicitudes", y esa
+  segunda mitad no era cierta todavia. Se agrego:
+  - Roster de `obtenerEquipo`: excluye usuarios con bloqueo reciproco,
+    **solo para quien no pertenece al equipo** (a un companero de equipo
+    real no se lo oculta de tu propio plantel por un bloqueo posterior).
+  - `invitarJugador`/`solicitarUnirseEquipo`: rechazan (400) si hay bloqueo
+    reciproco entre el capitan y el otro usuario.
+  - Nuevo helper puro `hayBloqueoEntrePar` en `helpers/bloqueos.js` (con
+    tests) para no repetir la logica de "¿cualquiera de los 2 bloqueo al
+    otro?" en los 3 lugares.
+- **B4 (dónde se desbloquea):** `GET /usuarios/me` ahora popula
+  `usuariosBloqueados` (nombre, apellido, foto) -- antes devolvia solo los
+  ObjectId crudos, sin nada para dibujar una lista de "Desbloquear".
+
 ## No implementado en esta fase (a proposito)
+
+- **Nivel de juego (`nivelJuego`) no se usa como filtro de busqueda todavia**
+  a pesar de que el backend ya lo soporta (`obtenerUsuarios` acepta `nivel`
+  desde antes de esta fase) -- el campo nunca tuvo una pantalla para que el
+  jugador lo cargue, asi que hoy esta vacio para practicamente todos.
+  Filtrar por el ahora devolveria resultados vacios/enganosos. Se agrega un
+  selector de nivel a Editar perfil en una entrega posterior, y recien ahi
+  tiene sentido exponer el filtro en el frontend.
 
 - Pantallas de frontend (busqueda de equipos, busqueda de jugadores, toggle
   "busco equipo" en el perfil, UI de reportar/bloquear) — Design + build
@@ -109,3 +150,14 @@ al equipo (Fase 2 sigue funcionando igual).
 - Los indices unicos nuevos no aplican aca (no se agrego ningun indice
   unico en esta fase); el indice compuesto `{estado, deporte, zona}` de
   `Equipo` es solo de lectura, sin garantia que verificar.
+
+## 2026-08-17 (frontend en curso — miMembresia en el detalle publico)
+
+Al construir el pie del detalle publico (D2/D3 del brief de diseño) surgio
+otro hueco: con `miEstado: 'solicitud_pendiente'`, la pantalla necesita
+mostrar "hace N días" y un boton de Cancelar, pero el `id`/`createdAt` de
+esa solicitud propia no venian en la respuesta -- `roster` la filtra para
+cualquiera que no pertenezca al equipo (correcto para privacidad, pero deja
+sin datos al propio dueño de la solicitud). Se agrega `miMembresia` (la
+membresia pendiente propia, o `null`) como campo hermano de `miEstado` en
+`GET /equipos/:id`, sin tocar el filtro de privacidad del roster.
