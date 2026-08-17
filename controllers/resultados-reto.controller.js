@@ -7,6 +7,15 @@ const { identificarLadoReportante, resolveEstadoResultado } = require('../helper
 
 const esAdmin = (req) => tieneRol(req.usuarioAuth, ADMIN_ROLES);
 
+// V3 del brief de diseño de Fase 5: la etiqueta ('Vos reportaste' / 'Marcela
+// reportó') tiene que usar el nombre guardado en el reporte, no el capitan
+// ACTUAL del equipo -- el rol puede cambiar despues del partido. Se puebla
+// el usuario real que reporto, no se resuelve contra la membresia vigente.
+const RESULTADO_POPULATE = [
+    { path: 'reporteRetador.reportadoPor', select: 'nombre apellido' },
+    { path: 'reporteRetado.reportadoPor', select: 'nombre apellido' },
+];
+
 const reportarResultado = async (req = request, res = response) => {
     try {
         const { id } = req.params;
@@ -66,6 +75,7 @@ const reportarResultado = async (req = request, res = response) => {
         });
 
         await resultado.save();
+        await resultado.populate(RESULTADO_POPULATE);
 
         return res.status(200).json({ ok: true, resultado });
     } catch (error) {
@@ -94,7 +104,7 @@ const obtenerResultado = async (req = request, res = response) => {
             return res.status(403).json({ ok: false, error: 'No podes ver el resultado de este reto' });
         }
 
-        const resultado = await ResultadoReto.findOne({ reto: id });
+        const resultado = await ResultadoReto.findOne({ reto: id }).populate(RESULTADO_POPULATE);
 
         return res.status(200).json({ ok: true, resultado });
     } catch (error) {
@@ -105,4 +115,5 @@ const obtenerResultado = async (req = request, res = response) => {
 module.exports = {
     reportarResultado,
     obtenerResultado,
+    RESULTADO_POPULATE,
 };

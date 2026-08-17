@@ -93,3 +93,59 @@ anteriores.
   colección al conectar) — confiado a que el mismo patrón ya funciona en
   otros índices únicos parciales de este dominio (`EquipoMembresia`,
   `Reto`), no verificado con datos reales.
+
+## Verificación V1-V6 (brief de diseño Fase 5, contra el código real)
+
+Antes de que el frontend arrancara los 6 estados (`E1`-`E6`), se
+verificaron contra el código las preguntas del brief de Claude Design.
+La verificación encontró 2 gaps reales, ambos cerrados en esta misma
+entrega (no se difirió nada nuevo):
+
+- **V1 — ¿hace falta un segundo pedido para el resultado?** No. `GET
+  /retos/:id` (`obtenerReto`, `controllers/retos.controller.js`) ya
+  embebe `resultado` junto con `reto` en la misma respuesta cuando
+  `reto.estado === 'jugado'`. Confirmado, sin cambios.
+- **V2 — ¿`reportadoPor` es el capitán actual o el usuario real que
+  reportó?** Es el `Usuario` que hizo el request en el momento de
+  reportar (`req.usuarioAuth._id`, `ReporteSchema.reportadoPor` con
+  `ref: 'Usuario'`) — no se resuelve contra la membresía/capitanía
+  vigente. Correcto por diseño: si el capitán cambia después del
+  partido, la etiqueta "Vos reportaste"/"[Nombre] reportó" tiene que
+  seguir mostrando quién reportó de verdad, no quién es capitán hoy.
+- **V3 — ¿la etiqueta usa el nombre guardado en el reporte? (gap
+  encontrado)** `reportadoPor` se guardaba correcto como ref a
+  `Usuario`, pero no se poblaba en ninguna respuesta — el frontend no
+  tenía forma de mostrar el nombre sin un lookup extra. Cerrado en esta
+  entrega: se agregó la constante `RESULTADO_POPULATE`
+  (`controllers/resultados-reto.controller.js`) que puebla
+  `reporteRetador.reportadoPor`/`reporteRetado.reportadoPor` con
+  `nombre apellido`, y se conectó en los 3 lugares donde un `resultado`
+  sale de este backend: `reportarResultado` (post-save), `GET
+  /retos/:id/resultado` (`obtenerResultado`) y `GET /retos/:id`
+  (`obtenerReto`, que hasta esta corrección no lo poblaba).
+- **V4 — ¿el marcador acepta cualquier entero no negativo?** Sí,
+  `golesRetador`/`golesRetado` son `{ type: Number, min: 0 }` sin tope
+  superior en `models/resultados-reto.js` — coincide tal cual con lo que
+  el brief asume (steppers `-`/`n`/`+` sin límite superior en la hoja
+  E5).
+- **V5 — ¿hay un plazo para reportar después de `jugado`?** No, a
+  propósito — documentado ya en "No implementado en esta fase". Si hace
+  falta una caducidad más adelante, es el mismo patrón que B1 de Fase 4
+  (`helpers/retos-lifecycle.js`), no una entidad nueva.
+- **V6 — ¿los 2 campos van separados por equipo (no "mis goles/goles del
+  rival")?** Confirmado: `golesRetador`/`golesRetado` es el marcador
+  completo del partido en el mismo orden fijo para los 2 reportes
+  (comentario ya presente en `models/resultados-reto.js` explica por
+  qué: comparar en el mismo marco de referencia evita un bug de signo al
+  invertir "propios/rival" de cada capitán).
+
+### Gap adicional encontrado (no es una de las V1-V6, pero lo exige "La lista de retos" del brief)
+
+`obtenerRetosDeEquipo` (la lista de retos de un equipo) no adjuntaba
+`resultado` por reto — sin eso, la fila de un reto `jugado` en la lista
+no puede mostrar "Ganaron 4-2" / "Falta tu marcador" / "Resultado en
+disputa" como pide el brief. Cerrado en esta entrega: se batchea
+`ResultadoReto.find({ reto: { $in: idsDeRetosJugados } })` (poblado con
+`RESULTADO_POPULATE`) y se adjunta como campo hermano `resultado` de
+cada reto en la respuesta — mismo patrón que `jugadoresCount` en
+`equipos.controller.js` (campo hermano, no anidado en el doc).
