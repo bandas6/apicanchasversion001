@@ -1,9 +1,11 @@
 const { request, response } = require('express');
 const { Reto } = require('../models/retos');
 const { ResultadoReto } = require('../models/resultados-reto');
+const Equipos = require('../models/equipos');
 const { ADMIN_ROLES, tieneRol } = require('../middlewares/validar-roles');
 const { puedeGestionarReto } = require('../helpers/retos-social');
 const { identificarLadoReportante, resolveEstadoResultado } = require('../helpers/resultados-reto-social');
+const { resolveIncrementosPuntuacion } = require('../helpers/puntuacion-social');
 
 const esAdmin = (req) => tieneRol(req.usuarioAuth, ADMIN_ROLES);
 
@@ -75,6 +77,23 @@ const reportarResultado = async (req = request, res = response) => {
         });
 
         await resultado.save();
+
+        // Fase 6: se actualiza ACA, en el mismo momento en que el resultado
+        // pasa a 'confirmado' -- nunca en 'en_disputa' (decision fundacional
+        // 3 del plan), y solo pasa una vez por reto porque una vez
+        // confirmado el resultado queda terminal (el chequeo de arriba,
+        // "resultado.estado !== 'pendiente'", no deja volver a reportar).
+        if (resultado.estado === 'confirmado') {
+            const incrementos = resolveIncrementosPuntuacion({
+                golesRetador: resultado.reporteRetador.golesRetador,
+                golesRetado: resultado.reporteRetador.golesRetado,
+            });
+            await Promise.all([
+                Equipos.updateOne({ _id: reto.equipoRetador._id }, { $inc: incrementos.retador }),
+                Equipos.updateOne({ _id: reto.equipoRetado._id }, { $inc: incrementos.retado }),
+            ]);
+        }
+
         await resultado.populate(RESULTADO_POPULATE);
 
         return res.status(200).json({ ok: true, resultado });
