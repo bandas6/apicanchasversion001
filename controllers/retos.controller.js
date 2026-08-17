@@ -1,5 +1,6 @@
 const { request, response } = require('express');
 const { Reto } = require('../models/retos');
+const { ResultadoReto } = require('../models/resultados-reto');
 const Equipos = require('../models/equipos');
 const Usuarios = require('../models/usuarios');
 const Reserva = require('../models/reservas');
@@ -170,7 +171,16 @@ const obtenerReto = async (req = request, res = response) => {
             return res.status(403).json({ ok: false, error: 'No podes ver este reto' });
         }
 
-        return res.status(200).json({ ok: true, reto });
+        // Fase 5: se embebe aca (en vez de que el frontend pegue un segundo
+        // request a GET /retos/:id/resultado) porque el detalle del reto
+        // SIEMPRE necesita saber si ya hay un resultado reportado para
+        // dibujar el bloque de 'jugado' correcto -- no es un dato opcional
+        // que se pida a demanda.
+        const resultado = reto.estado === 'jugado'
+            ? await ResultadoReto.findOne({ reto: id })
+            : null;
+
+        return res.status(200).json({ ok: true, reto, resultado });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
