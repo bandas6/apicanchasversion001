@@ -79,7 +79,24 @@ podido ver a quien invito un equipo. Se cambio la ruta a
 ese equipo especifico. Comportamiento sin cambios para quien ya pertenece
 al equipo (Fase 2 sigue funcionando igual).
 
+### miEstado en el detalle de equipo
+
+`GET /equipos/:id`, cuando hay sesion, ahora tambien devuelve `miEstado`:
+`'capitan' | 'miembro' | 'solicitud_pendiente' | 'invitacion_pendiente' |
+'ya_tengo_equipo_de_este_deporte' | 'disponible'` (o `null` sin sesion). Es
+lo que decide que boton mostrar en el detalle publico ("Solicitar unirme"
+vs "Ya sos parte" vs "Solicitud enviada" vs deshabilitado) sin que el
+frontend tenga que cruzar esto a mano contra `Mis equipos`/`Mis solicitudes`.
+
 ## No implementado en esta fase (a proposito)
+
+- **Nivel de juego (`nivelJuego`) no se usa como filtro de busqueda todavia**
+  a pesar de que el backend ya lo soporta (`obtenerUsuarios` acepta `nivel`
+  desde antes de esta fase) -- el campo nunca tuvo una pantalla para que el
+  jugador lo cargue, asi que hoy esta vacio para practicamente todos.
+  Filtrar por el ahora devolveria resultados vacios/enganosos. Se agrega un
+  selector de nivel a Editar perfil en una entrega posterior, y recien ahi
+  tiene sentido exponer el filtro en el frontend.
 
 - Pantallas de frontend (busqueda de equipos, busqueda de jugadores, toggle
   "busco equipo" en el perfil, UI de reportar/bloquear) — Design + build

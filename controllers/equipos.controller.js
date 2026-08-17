@@ -215,7 +215,37 @@ const obtenerEquipo = async (req = request, res = response) => {
             ? roster
             : roster.filter((m) => m.estado === 'aceptada');
 
-        return res.status(200).json({ ok: true, equipo, roster: rosterVisible });
+        // Fase 3: la busqueda publica necesita saber que boton mostrar en el
+        // detalle (Solicitar unirme / Ya sos parte / Solicitud enviada /
+        // Ya tenes equipo de este deporte) sin que el frontend tenga que
+        // cruzar esto a mano contra Mis equipos/Mis solicitudes.
+        let miEstado = null;
+        if (usuarioAuthId) {
+            const miMembresiaAceptada = roster.find((m) => m.estado === 'aceptada'
+                && String(m.usuario?._id || m.usuario) === usuarioAuthId);
+
+            if (miMembresiaAceptada) {
+                miEstado = miMembresiaAceptada.rol === 'capitan' ? 'capitan' : 'miembro';
+            } else {
+                const miPendiente = await EquipoMembresia.findOne({
+                    equipo: id,
+                    usuario: usuarioAuthId,
+                    estado: 'pendiente',
+                });
+
+                if (miPendiente) {
+                    miEstado = miPendiente.origen === 'invitacion'
+                        ? 'invitacion_pendiente'
+                        : 'solicitud_pendiente';
+                } else if (await tieneEquipoAceptadoEnDeporte(usuarioAuthId, equipo.deporte)) {
+                    miEstado = 'ya_tengo_equipo_de_este_deporte';
+                } else {
+                    miEstado = 'disponible';
+                }
+            }
+        }
+
+        return res.status(200).json({ ok: true, equipo, roster: rosterVisible, miEstado });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
