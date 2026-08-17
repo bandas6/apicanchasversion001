@@ -150,3 +150,14 @@ frontend con la copia que el diseño ya escribió:
 - Los indices unicos nuevos no aplican aca (no se agrego ningun indice
   unico en esta fase); el indice compuesto `{estado, deporte, zona}` de
   `Equipo` es solo de lectura, sin garantia que verificar.
+
+## 2026-08-17 (frontend en curso — miMembresia en el detalle publico)
+
+Al construir el pie del detalle publico (D2/D3 del brief de diseño) surgio
+otro hueco: con `miEstado: 'solicitud_pendiente'`, la pantalla necesita
+mostrar "hace N días" y un boton de Cancelar, pero el `id`/`createdAt` de
+esa solicitud propia no venian en la respuesta -- `roster` la filtra para
+cualquiera que no pertenezca al equipo (correcto para privacidad, pero deja
+sin datos al propio dueño de la solicitud). Se agrega `miMembresia` (la
+membresia pendiente propia, o `null`) como campo hermano de `miEstado` en
+`GET /equipos/:id`, sin tocar el filtro de privacidad del roster.

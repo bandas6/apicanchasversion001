@@ -237,6 +237,13 @@ const obtenerEquipo = async (req = request, res = response) => {
         // Ya tenes equipo de este deporte) sin que el frontend tenga que
         // cruzar esto a mano contra Mis equipos/Mis solicitudes.
         let miEstado = null;
+        // D2/D3 (33b): con estado 'solicitud_pendiente' el pie publico
+        // muestra 'hace N dias' y un boton de Cancelar -- necesita el id y
+        // el createdAt de MI propia membresia pendiente, que roster no trae
+        // (se filtra para todo visitante que no pertenece al equipo, ver
+        // arriba). Se devuelve aparte, no se fuerza a traer todo el roster
+        // sin filtrar solo para esto.
+        let miMembresia = null;
         if (usuarioAuthId) {
             const miMembresiaAceptada = roster.find((m) => m.estado === 'aceptada'
                 && String(m.usuario?._id || m.usuario) === usuarioAuthId);
@@ -254,6 +261,7 @@ const obtenerEquipo = async (req = request, res = response) => {
                     miEstado = miPendiente.origen === 'invitacion'
                         ? 'invitacion_pendiente'
                         : 'solicitud_pendiente';
+                    miMembresia = miPendiente;
                 } else if (await tieneEquipoAceptadoEnDeporte(usuarioAuthId, equipo.deporte)) {
                     miEstado = 'ya_tengo_equipo_de_este_deporte';
                 } else {
@@ -262,7 +270,13 @@ const obtenerEquipo = async (req = request, res = response) => {
             }
         }
 
-        return res.status(200).json({ ok: true, equipo, roster: rosterVisible, miEstado });
+        return res.status(200).json({
+            ok: true,
+            equipo,
+            roster: rosterVisible,
+            miEstado,
+            miMembresia,
+        });
     } catch (error) {
         return res.status(500).json({ ok: false, error: error.message });
     }
