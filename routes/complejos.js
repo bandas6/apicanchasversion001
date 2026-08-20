@@ -57,6 +57,7 @@ router.post('/', [
     puedeGestionarComplejo,
     uploadMemory.fields([
         { name: 'portada', maxCount: 1 },
+        { name: 'galeria', maxCount: 8 },
     ]),
     check('nombre').custom(nombreComplejoExise),
     validarCampos
@@ -67,6 +68,7 @@ router.put('/:id', [
     puedeGestionarComplejo,
     uploadMemory.fields([
         { name: 'portada', maxCount: 1 },
+        { name: 'galeria', maxCount: 8 },
     ]),
     validarCampos
 ], actualizarComplejo);
