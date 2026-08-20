@@ -1707,6 +1707,191 @@ const cancelarAvisosPorReserva = async ({ usuarioId, fecha, horaInicio }) => {
     }
 };
 
+const ESTADOS_RESERVA = [
+    'pendiente',
+    'confirmada',
+    'rechazada',
+    'cancelada',
+    'expirada',
+    'pendiente_cierre',
+    'completada',
+    'no_show_usuario',
+    'cancelada_tardia_usuario',
+    'cancelada_por_complejo',
+    'incidencia',
+];
+const ESTADOS_SIN_INGRESO = ['cancelada', 'rechazada', 'expirada'];
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+// El campo `fecha` de una reserva se guarda como medianoche UTC del dia de
+// calendario pretendido (ver comentario de `parseFecha` en
+// canchas-admin-web/src/app/features/dashboard/dashboard.component.ts). Por
+// eso "desde"/"hasta" (strings 'YYYY-MM-DD' que ya representan ese mismo dia
+// de calendario) se parsean tambien como medianoche UTC: asi el rango
+// [desde, hasta] coincide exactamente con los dias de calendario que ve el
+// admin en la web/app, sin corrimientos de zona horaria.
+const parseFechaRango = (raw) => new Date(`${raw}T00:00:00.000Z`);
+
+const rangoAnterior = (start, end) => {
+    const lengthDays = Math.round((end.getTime() - start.getTime()) / DIA_MS) + 1;
+    const prevEnd = new Date(start.getTime() - DIA_MS);
+    const prevStart = new Date(prevEnd.getTime() - (lengthDays - 1) * DIA_MS);
+    return { start: prevStart, end: prevEnd };
+};
+
+const agregarMetricasRango = async (matchBase, start, end) => {
+    const match = { ...matchBase, fecha: { $gte: start, $lte: end } };
+
+    const [facetResult] = await Reservas.aggregate([
+        { $match: match },
+        {
+            $facet: {
+                totalesPorEstado: [
+                    { $group: { _id: '$estado', count: { $sum: 1 } } },
+                ],
+                ingreso: [
+                    { $match: { estado: { $nin: ESTADOS_SIN_INGRESO } } },
+                    { $group: { _id: null, total: { $sum: '$precioTotal' } } },
+                ],
+                serieDiaria: [
+                    { $match: { estado: { $nin: ESTADOS_SIN_INGRESO } } },
+                    {
+                        $group: {
+                            _id: {
+                                $dateToString: { format: '%Y-%m-%d', date: '$fecha', timezone: 'UTC' },
+                            },
+                            ingreso: { $sum: '$precioTotal' },
+                            reservas: { $sum: 1 },
+                        },
+                    },
+                    { $sort: { _id: 1 } },
+                ],
+                porSede: [
+                    {
+                        $group: {
+                            _id: '$complejo',
+                            reservas: { $sum: 1 },
+                            ingreso: {
+                                $sum: {
+                                    $cond: [{ $in: ['$estado', ESTADOS_SIN_INGRESO] }, 0, '$precioTotal'],
+                                },
+                            },
+                        },
+                    },
+                ],
+                pendientes: [
+                    { $match: { estado: 'pendiente' } },
+                    {
+                        $group: {
+                            _id: null,
+                            count: { $sum: 1 },
+                            masAntiguaFechaCreacion: { $min: '$fechaCreacion' },
+                        },
+                    },
+                ],
+            },
+        },
+    ]);
+
+    const totalesPorEstado = Object.fromEntries(ESTADOS_RESERVA.map((estado) => [estado, 0]));
+    for (const { _id, count } of facetResult.totalesPorEstado) {
+        if (_id && Object.prototype.hasOwnProperty.call(totalesPorEstado, _id)) {
+            totalesPorEstado[_id] = count;
+        }
+    }
+
+    const totalReservas = Object.values(totalesPorEstado).reduce((sum, n) => sum + n, 0);
+
+    return {
+        ingresoTotal: facetResult.ingreso[0]?.total ?? 0,
+        totalReservas,
+        totalesPorEstado,
+        serieDiaria: facetResult.serieDiaria.map((item) => ({
+            fecha: item._id,
+            ingreso: item.ingreso,
+            reservas: item.reservas,
+        })),
+        porSede: facetResult.porSede
+            .filter((item) => item._id)
+            .map((item) => ({
+                complejo: String(item._id),
+                reservas: item.reservas,
+                ingreso: item.ingreso,
+            })),
+        pendientes: {
+            count: facetResult.pendientes[0]?.count ?? 0,
+            masAntiguaFechaCreacion: facetResult.pendientes[0]?.masAntiguaFechaCreacion ?? null,
+        },
+    };
+};
+
+const obtenerDashboardMetricas = async (req = request, res = response) => {
+    try {
+        const { desde, hasta } = req.query;
+        const start = parseFechaRango(desde);
+        const end = parseFechaRango(hasta);
+
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El rango de fechas no es valido (desde debe ser anterior o igual a hasta)',
+            });
+        }
+
+        const matchBase = {};
+
+        if (req.usuarioAuth?.rol === 'ADMIN') {
+            const complejosAdministrados = await Complejos.find({
+                $or: [
+                    { administrador: req.usuarioAuth._id },
+                    { administradores: req.usuarioAuth._id },
+                ],
+            }).select('_id');
+
+            const complejoIds = complejosAdministrados.map((item) => item._id);
+
+            if (complejoIds.length === 0) {
+                return res.status(200).json({
+                    ok: true,
+                    rango: { desde, hasta },
+                    actual: {
+                        ingresoTotal: 0,
+                        totalReservas: 0,
+                        totalesPorEstado: Object.fromEntries(
+                            ESTADOS_RESERVA.map((estado) => [estado, 0]),
+                        ),
+                        serieDiaria: [],
+                        porSede: [],
+                        pendientes: { count: 0, masAntiguaFechaCreacion: null },
+                    },
+                    ingresoAnterior: 0,
+                });
+            }
+
+            matchBase.complejo = { $in: complejoIds };
+        }
+
+        const previo = rangoAnterior(start, end);
+
+        const [actual, anterior] = await Promise.all([
+            agregarMetricasRango(matchBase, start, end),
+            agregarMetricasRango(matchBase, previo.start, previo.end),
+        ]);
+
+        return res.status(200).json({
+            ok: true,
+            rango: { desde, hasta },
+            actual,
+            ingresoAnterior: anterior.ingresoTotal,
+        });
+    } catch (error) {
+        return res.status(500).json({
+            ok: false,
+            error: error.message,
+        });
+    }
+};
+
 const obtenerReservas = async (req = request, res = response) => {
     const query = {};
     const { cancha, complejo, usuario, estado } = req.query;
@@ -2328,6 +2513,7 @@ module.exports = {
     obtenerDisponibilidadAgregada,
     actualizarReserva,
     obtenerReservas,
+    obtenerDashboardMetricas,
     obtenerMisReservas,
     cancelarMiReserva,
     cerrarReserva,

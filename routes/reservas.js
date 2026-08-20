@@ -4,6 +4,7 @@ const { check } = require("express-validator");
 const { validarJWT, validarJWTOptional } = require("../middlewares/validar-jwt");
 const {
     obtenerReservas,
+    obtenerDashboardMetricas,
     obtenerReserva,
     guardarReserva,
     actualizarReserva,
@@ -53,6 +54,14 @@ router.get('/admin/mis-complejos', [
     esAdminRol,
     validarCampos,
 ], obtenerReservas);
+
+router.get('/admin/dashboard-metricas', [
+    validarJWT,
+    esAdminRol,
+    check('desde', 'La fecha "desde" es obligatoria (YYYY-MM-DD)').matches(/^\d{4}-\d{2}-\d{2}$/),
+    check('hasta', 'La fecha "hasta" es obligatoria (YYYY-MM-DD)').matches(/^\d{4}-\d{2}-\d{2}$/),
+    validarCampos,
+], obtenerDashboardMetricas);
 
 router.get('/cancha/:id', [
     check('id', 'No es un id valido').isMongoId(),
