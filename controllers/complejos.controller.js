@@ -518,7 +518,12 @@ const guardarComplejo = async (req = request, res = response) => {
         if (portadaUrl) {
             data.img = portadaUrl;
         }
-        data.imagenes = data.img ? [data.img] : [];
+        const galeriaSubida = await uploadManyImages({
+            files: files.galeria || [],
+            folder: 'canchas/complejos',
+            publicIdPrefix: buildCloudinaryPublicId('complejo-galeria', data.nombre || req.usuarioAuth._id),
+        });
+        data.imagenes = mergeUniqueUrls(data.img ? [data.img] : [], data.imagenes, galeriaSubida);
         const lat = data.ubicacionGeo?.lat;
         const lng = data.ubicacionGeo?.lng;
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
@@ -586,7 +591,17 @@ const actualizarComplejo = async (req = request, res = response) => {
             publicId: buildCloudinaryPublicId('complejo-portada', id, Date.now()),
         });
         data.img = portadaUrl || data.img || complejoActual.img || '';
-        data.imagenes = data.img ? [data.img] : [];
+        const galeriaSubida = await uploadManyImages({
+            files: files.galeria || [],
+            folder: 'canchas/complejos',
+            publicIdPrefix: buildCloudinaryPublicId('complejo-galeria', id),
+        });
+        // `data.imagenes` viene de imagenesActualesJson (echo-back de lo
+        // que el cliente quiere CONSERVAR, mismo patron que tarifas en
+        // canchas.controller.js): si no se manda (clientes viejos que no
+        // conocen la galeria), queda vacio y el resultado final es solo
+        // el portada, igual que el comportamiento anterior.
+        data.imagenes = mergeUniqueUrls(data.img ? [data.img] : [], data.imagenes, galeriaSubida);
         const lat = data.ubicacionGeo?.lat;
         const lng = data.ubicacionGeo?.lng;
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
