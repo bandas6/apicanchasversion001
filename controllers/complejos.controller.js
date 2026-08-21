@@ -835,7 +835,7 @@ const eliminarComplejo = async (req = request, res = response) => {
 };
 
 const obtenerComplejos = async (req = request, res = response) => {
-    const { desde = 0, limit = 20, administrador, view, q } = req.query;
+    const { desde = 0, limit = 20, administrador, view, q, estado } = req.query;
     // Sin `administrador` (listado publico) solo se muestran sedes activas.
     // Con `administrador` se listan todas (incluidas las desactivadas) SOLO
     // si quien pide es ese mismo admin autenticado (o un DEV) — asi el
@@ -849,6 +849,13 @@ const obtenerComplejos = async (req = request, res = response) => {
     const query = puedeVerInactivas ? {} : { estado: true };
     const summaryView = isSummaryViewRequested(view);
     const searchRegex = String(q || '').trim();
+
+    // El filtro de estado (activas/inactivas) solo tiene sentido cuando el
+    // caller ya puede ver inactivas (dueño de la sede o DEV) — sin
+    // `administrador`, el listado publico ya viene forzado a estado:true.
+    if (puedeVerInactivas && (estado === 'true' || estado === 'false')) {
+        query.estado = estado === 'true';
+    }
 
     if (administrador) {
         query.$or = [

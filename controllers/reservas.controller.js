@@ -1894,12 +1894,24 @@ const obtenerDashboardMetricas = async (req = request, res = response) => {
 
 const obtenerReservas = async (req = request, res = response) => {
     const query = {};
-    const { cancha, complejo, usuario, estado } = req.query;
+    const { cancha, complejo, usuario, estado, desde = 0, limit = 0, fechaDesde, fechaHasta, orden } = req.query;
 
     if (cancha) query.cancha = cancha;
     if (complejo) query.complejo = complejo;
     if (usuario) query.usuario = usuario;
-    if (estado) query.estado = estado;
+    // El panel admin manda `estado` como CSV para agrupar varios estados en
+    // una sola pestaña (p.ej. "Historial"). Un solo valor sin coma sigue
+    // funcionando igual que antes (callers existentes, incluida la app
+    // movil, no se ven afectados).
+    if (estado) {
+        const estados = String(estado).split(',').map((e) => e.trim()).filter(Boolean);
+        query.estado = estados.length > 1 ? { $in: estados } : estados[0];
+    }
+    if (fechaDesde || fechaHasta) {
+        query.fecha = {};
+        if (fechaDesde) query.fecha.$gte = fechaDesde;
+        if (fechaHasta) query.fecha.$lte = fechaHasta;
+    }
 
     try {
         if (req.usuarioAuth?.rol === 'ADMIN') {
@@ -1932,10 +1944,16 @@ const obtenerReservas = async (req = request, res = response) => {
 
         await syncReservationsForQuery(query);
 
+        // desde/limit son opcionales y por defecto (0) preservan el
+        // comportamiento previo (trae todo, sin paginar) para cualquier
+        // caller que no los mande explicitamente.
+        const sortDireccion = orden === 'desc' ? -1 : 1;
         const [total, reservas] = await Promise.all([
             Reservas.countDocuments(query),
             populateReservaQuery(Reservas.find(query))
-                .sort({ fecha: 1, horaInicio: 1 })
+                .sort({ fecha: sortDireccion, horaInicio: sortDireccion })
+                .skip(Number(desde) || 0)
+                .limit(Number(limit) || 0)
         ]);
 
         return res.status(200).json({
