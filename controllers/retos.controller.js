@@ -52,7 +52,7 @@ const RETO_POPULATE = [
         select: 'nombre nombreArchivoImagen capitan deporte',
         populate: { path: 'capitan', select: 'nombre apellido nombre_archivo_imagen' },
     },
-    { path: 'deporte', select: 'nombre' },
+    { path: 'deporte', select: 'nombre iconoMaterial' },
     // La lista (L3 del brief de diseño) ya necesita fecha/hora/cancha de la
     // reserva vinculada para la metadata de cada fila ('sáb 20 sep, 18:00 ·
     // Jonathan') -- no solo el detalle. Sin esto `reto.reserva` llega como
@@ -235,7 +235,7 @@ const responderReto = async (req = request, res = response) => {
         const reto = await Reto.findById(id)
             .populate('equipoRetador', 'capitan')
             .populate('equipoRetado', 'capitan')
-            .populate('deporte', 'nombre');
+            .populate('deporte', 'nombre iconoMaterial');
         if (!reto) {
             return res.status(404).json({ ok: false, error: 'Reto no encontrado' });
         }
@@ -293,7 +293,7 @@ const vincularReserva = async (req = request, res = response) => {
         }
 
         const reserva = await Reserva.findById(reservaId)
-            .populate('deporte', 'nombre')
+            .populate('deporte', 'nombre iconoMaterial')
             .populate('cancha', 'deporte tipoDeporte');
         if (!reserva) {
             return res.status(404).json({ ok: false, error: 'Reserva no encontrada' });

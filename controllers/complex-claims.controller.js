@@ -1,6 +1,8 @@
 const { request, response } = require('express');
+const { Types } = require('mongoose');
 const ComplexClaim = require('../models/complex-claims');
 const Complejo = require('../models/complejos');
+const Reserva = require('../models/reservas');
 const Usuario = require('../models/usuarios');
 const RoleChangeAudit = require('../models/role-change-audits');
 const { auditAdminGeneralAction } = require('../helpers/audit-admin-general');
@@ -208,10 +210,38 @@ const obtenerReclamosComplejoAdmin = async (req = request, res = response) => {
             ),
         ]);
 
+        const solicitanteIds = reclamos
+            .map((claim) => String(claim.solicitante?._id || claim.solicitante || ''))
+            .filter(Boolean);
+
+        const solicitanteObjectIds = solicitanteIds
+            .filter((id) => Types.ObjectId.isValid(id))
+            .map((id) => new Types.ObjectId(id));
+
+        const [reservasPorUsuario, reclamosPorUsuario] = await Promise.all([
+            Reserva.aggregate([
+                { $match: { usuario: { $in: solicitanteObjectIds } } },
+                { $group: { _id: '$usuario', total: { $sum: 1 } } },
+            ]),
+            ComplexClaim.aggregate([
+                { $match: { solicitante: { $in: solicitanteObjectIds } } },
+                { $group: { _id: '$solicitante', total: { $sum: 1 } } },
+            ]),
+        ]);
+
+        const reservasMap = new Map(reservasPorUsuario.map((item) => [String(item._id), item.total]));
+        const reclamosMap = new Map(reclamosPorUsuario.map((item) => [String(item._id), item.total]));
+
         return res.status(200).json({
             ok: true,
             total,
-            reclamos: reclamos.map(serializeClaim),
+            reclamos: reclamos.map((claim) => {
+                const serialized = serializeClaim(claim);
+                const solicitanteId = String(claim.solicitante?._id || claim.solicitante || '');
+                serialized.solicitanteReservasTotal = reservasMap.get(solicitanteId) || 0;
+                serialized.solicitanteReclamosPrevios = Math.max(0, (reclamosMap.get(solicitanteId) || 0) - 1);
+                return serialized;
+            }),
         });
     } catch (error) {
         return res.status(500).json({

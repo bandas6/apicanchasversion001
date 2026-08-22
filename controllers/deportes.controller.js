@@ -9,6 +9,14 @@ const slugify = (value = '') => String(value)
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
+const normalizarIconoMaterial = (value) => {
+    const icono = String(value || '').trim();
+    if (!icono) return Deporte.iconoMaterialDefault;
+    return Deporte.iconosMaterialPermitidos.includes(icono)
+        ? icono
+        : null;
+};
+
 const obtenerDeportes = async (req = request, res = response) => {
     const { desde = 0, limit = 100, activos } = req.query;
     const query = {};
@@ -42,11 +50,20 @@ const obtenerDeportes = async (req = request, res = response) => {
 const crearDeporte = async (req = request, res = response) => {
     const nombre = String(req.body?.nombre || '').trim();
     const descripcion = String(req.body?.descripcion || '').trim();
+    const iconoMaterial = normalizarIconoMaterial(req.body?.iconoMaterial);
 
     if (!nombre) {
         return res.status(400).json({
             ok: false,
             error: 'El nombre del deporte es obligatorio',
+        });
+    }
+
+    if (!iconoMaterial) {
+        return res.status(400).json({
+            ok: false,
+            error: 'El icono del deporte no es valido',
+            iconosPermitidos: Deporte.iconosMaterialPermitidos,
         });
     }
 
@@ -70,6 +87,7 @@ const crearDeporte = async (req = request, res = response) => {
             nombre,
             slug,
             descripcion,
+            iconoMaterial,
             activo: true,
         });
 
@@ -108,6 +126,18 @@ const actualizarDeporte = async (req = request, res = response) => {
 
     if (req.body?.descripcion !== undefined) {
         payload.descripcion = descripcion;
+    }
+
+    if (req.body?.iconoMaterial !== undefined) {
+        const iconoMaterial = normalizarIconoMaterial(req.body.iconoMaterial);
+        if (!iconoMaterial) {
+            return res.status(400).json({
+                ok: false,
+                error: 'El icono del deporte no es valido',
+                iconosPermitidos: Deporte.iconosMaterialPermitidos,
+            });
+        }
+        payload.iconoMaterial = iconoMaterial;
     }
 
     if (req.body?.activo !== undefined) {

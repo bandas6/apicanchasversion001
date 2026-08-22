@@ -146,7 +146,7 @@ const obtenerEquipos = async (req = request, res = response) => {
         const [total, equipos] = await Promise.all([
             Equipos.countDocuments(query),
             Equipos.find(query)
-                .populate('deporte', 'nombre')
+                .populate('deporte', 'nombre iconoMaterial')
                 .populate('capitan', 'nombre apellido')
                 .skip(Number(desde))
                 .limit(Number(limit)),
@@ -178,7 +178,7 @@ const obtenerEquipo = async (req = request, res = response) => {
         const { id } = req.params;
 
         const equipo = await Equipos.findById(id)
-            .populate('deporte', 'nombre')
+            .populate('deporte', 'nombre iconoMaterial')
             .populate('capitan', 'nombre apellido nombre_archivo_imagen');
 
         if (!equipo || !equipo.estado) {
@@ -382,7 +382,7 @@ const obtenerMisEquipos = async (req = request, res = response) => {
             estado: 'aceptada',
         }).populate({
             path: 'equipo',
-            populate: [{ path: 'deporte', select: 'nombre' }],
+            populate: [{ path: 'deporte', select: 'nombre iconoMaterial' }],
         });
 
         const activas = membresias.filter(
@@ -543,7 +543,7 @@ const obtenerMisSolicitudes = async (req = request, res = response) => {
                 path: 'equipo',
                 select: 'nombre nombreArchivoImagen deporte capitan',
                 populate: [
-                    { path: 'deporte', select: 'nombre' },
+                    { path: 'deporte', select: 'nombre iconoMaterial' },
                     { path: 'capitan', select: 'nombre apellido' },
                 ],
             });
