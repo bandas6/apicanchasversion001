@@ -150,40 +150,64 @@ const removeTokensFromUsuario = async (usuarioId, tokensToRemove) => {
  * no puede hacer fallar la operacion de negocio que ya se completo (confirmar
  * una reserva tiene que funcionar aunque Firebase este caido).
  */
+/**
+ * Envia a una lista de tokens concreta, sin tocar la base.
+ *
+ * Es la parte de transporte pura: `enviarPushAUsuario` la usa despues de
+ * resolver los tokens del usuario, y el script de diagnostico la usa directo
+ * para poder probar la entrega aunque MongoDB no este disponible.
+ *
+ * Devuelve tambien `invalidTokens` para que quien tenga el contexto decida si
+ * corresponde borrarlos (aca no se sabe a que usuario pertenecen).
+ */
+const enviarPushATokens = async (tokens, { title, body, data = {} } = {}) => {
+    const messaging = getMessaging();
+    if (!messaging) {
+        if (!missingConfigLogged) {
+            missingConfigLogged = true;
+            console.warn(
+                '[push] Envio desactivado: falta FIREBASE_SERVICE_ACCOUNT o '
+                + 'GOOGLE_APPLICATION_CREDENTIALS. Los avisos solo se veran al abrir la app.',
+            );
+        }
+        return { ok: false, reason: 'not_configured', sent: 0, invalidTokens: [] };
+    }
+
+    if (!Array.isArray(tokens) || !tokens.length) {
+        return { ok: false, reason: 'no_tokens', sent: 0, invalidTokens: [] };
+    }
+
+    const response = await messaging.sendEachForMulticast({
+        tokens,
+        notification: { title, body },
+        data: normalizeDataPayload(data),
+    });
+
+    return {
+        ok: true,
+        sent: response.successCount || 0,
+        failed: response.failureCount || 0,
+        invalidTokens: resolveInvalidTokens(tokens, response.responses),
+    };
+};
+
 const enviarPushAUsuario = async (usuarioId, { title, body, data = {} } = {}) => {
     try {
-        const messaging = getMessaging();
-        if (!messaging) {
-            if (!missingConfigLogged) {
-                missingConfigLogged = true;
-                console.warn(
-                    '[push] Envio desactivado: falta FIREBASE_SERVICE_ACCOUNT o '
-                    + 'GOOGLE_APPLICATION_CREDENTIALS. Los avisos solo se veran al abrir la app.',
-                );
-            }
-            return { ok: false, reason: 'not_configured', sent: 0 };
-        }
-
         const usuario = await Usuarios.findById(usuarioId).select('devicePushTokens');
         const tokens = collectUserTokens(usuario);
-        if (!tokens.length) {
-            return { ok: false, reason: 'no_tokens', sent: 0 };
+
+        const resultado = await enviarPushATokens(tokens, { title, body, data });
+        if (!resultado.ok) {
+            return { ok: false, reason: resultado.reason, sent: 0 };
         }
 
-        const response = await messaging.sendEachForMulticast({
-            tokens,
-            notification: { title, body },
-            data: normalizeDataPayload(data),
-        });
-
-        const invalidTokens = resolveInvalidTokens(tokens, response.responses);
-        await removeTokensFromUsuario(usuarioId, invalidTokens);
+        await removeTokensFromUsuario(usuarioId, resultado.invalidTokens);
 
         return {
             ok: true,
-            sent: response.successCount || 0,
-            failed: response.failureCount || 0,
-            removedTokens: invalidTokens.length,
+            sent: resultado.sent,
+            failed: resultado.failed,
+            removedTokens: resultado.invalidTokens.length,
         };
     } catch (error) {
         // Se traga el error a proposito (ver doc de la funcion), pero se
@@ -205,6 +229,7 @@ module.exports = {
     collectUserTokens,
     resolveInvalidTokens,
     normalizeDataPayload,
+    enviarPushATokens,
     enviarPushAUsuario,
     resetPushSenderCacheForTests,
 };

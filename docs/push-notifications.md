@@ -85,6 +85,41 @@ al proyecto de Firebase.
 npm test    # incluye test/push-notifications.test.js
 ```
 
+### Diagnostico end-to-end
+
+Cuando una push no llega, hay tres cosas que pueden estar cortadas y cada una
+falla en silencio por su lado. Este script las revisa en orden y dice cual es:
+
+```bash
+node scripts/enviar-push-de-prueba.js user1@user.com
+```
+
+```
+1. Credenciales de Firebase: OK | FALTAN
+2. Usuario: OK (user1@user.com)
+3. Tokens de dispositivo guardados: 1
+4. Enviando...  ->  {"ok":true,"sent":1,...}
+```
+
+Envia por `enviarPushAUsuario`, el mismo camino que corre al confirmar una
+reserva, asi que valida lo que de verdad se ejecuta en produccion — a
+diferencia de "Enviar mensaje de prueba" de la consola de Firebase, que va del
+navegador al dispositivo y saltea tanto las credenciales del servidor como los
+tokens guardados en la base.
+
+Si MongoDB no esta disponible (por ejemplo `querySrv ECONNREFUSED` cuando el
+DNS local no resuelve los registros SRV de Atlas), se puede enviar a un
+dispositivo concreto sin tocar la base:
+
+```bash
+node scripts/enviar-push-de-prueba.js --token <TOKEN_FCM>
+```
+
+El token se obtiene del log de la app en modo debug
+(`[FirebasePushToken] Token FCM del dispositivo: ...`). Si por esta via si
+llega la notificacion, las credenciales del servidor y la entrega de FCM estan
+bien, y el problema esta en otro lado.
+
 Los tests cubren la logica pura (limpieza de tokens, deteccion de tokens
 muertos, normalizacion del payload de `data`, textos de cada estado). El envio
 real contra FCM no se testea: requiere credenciales y red.
