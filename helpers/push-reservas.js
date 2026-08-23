@@ -102,9 +102,12 @@ const notificarCambioEstadoReserva = async (reserva, estado) => {
     if (!contenido) return { ok: false, reason: 'estado_sin_aviso' };
 
     const usuarioId = reserva?.usuario?._id || reserva?.usuario;
-    if (!usuarioId) return { ok: false, reason: 'sin_usuario' };
+    if (!usuarioId) {
+        console.warn(`[push] Reserva sin usuario, no se notifica (estado: ${estado})`);
+        return { ok: false, reason: 'sin_usuario' };
+    }
 
-    return enviarPushAUsuario(usuarioId, {
+    const resultado = await enviarPushAUsuario(usuarioId, {
         ...contenido,
         // Mismas claves que ya usa el aviso in-app, para que al tocar la push
         // la app pueda abrir la reserva concreta en vez de la bandeja.
@@ -114,6 +117,21 @@ const notificarCambioEstadoReserva = async (reserva, estado) => {
             estado,
         },
     });
+
+    // Siempre se registra el desenlace, incluso cuando todo sale bien.
+    //
+    // Antes esta funcion podia terminar sin escribir una sola linea: el aviso
+    // de "faltan credenciales" se emite una unica vez por proceso, y el caso
+    // "el usuario no tiene tokens" retornaba mudo. El resultado era que ante
+    // una push que no llegaba, un log vacio no distinguia entre "no se ejecuto
+    // el codigo", "no hay credenciales" y "el usuario no tiene dispositivos
+    // registrados" — tres problemas con soluciones distintas.
+    const detalle = resultado.ok
+        ? `enviados=${resultado.sent} fallidos=${resultado.failed ?? 0}`
+        : `motivo=${resultado.reason}`;
+    console.log(`[push] Aviso de reserva (${estado}) -> ${detalle}`);
+
+    return resultado;
 };
 
 module.exports = {
