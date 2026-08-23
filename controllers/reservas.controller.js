@@ -8,6 +8,7 @@ const ReservationWaitlist = require("../models/reservation-waitlists");
 const { USER_ATTENDANCE_VALUES, USER_BEHAVIOR_VALUES } = require("../models/user-reputation-events");
 const { ADMIN_ROLES, usuarioAdministraComplejo } = require("../middlewares/validar-roles");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
+const { notificarCambioEstadoReserva } = require("../helpers/push-reservas");
 const {
     CLOSURE_STATES,
     USER_REVIEW_ALLOWED_STATES,
@@ -788,6 +789,13 @@ const actualizarReserva = async (req = request, res = response) => {
 
         await syncReservationLifecycle(reservaActual);
 
+        // Se guarda antes del update para avisar al usuario solo cuando el
+        // estado cambia de verdad: un PUT que toca otro campo no tiene por que
+        // interrumpirlo con una push. Se lee despues de
+        // syncReservationLifecycle para comparar contra el estado real, no
+        // contra uno que el propio sync acaba de mover.
+        const estadoPrevio = String(reservaActual.estado || '').trim();
+
         const nextState = String(req.body?.estado || reservaActual.estado || '').trim();
 
         if (CLOSURE_STATES.includes(nextState)) {
@@ -941,6 +949,16 @@ const actualizarReserva = async (req = request, res = response) => {
         const reservaPopulated = await populateReservaQuery(
             Reservas.findById(reserva._id),
         );
+
+        // Confirmar o rechazar es justo el momento en que el usuario necesita
+        // enterarse sin tener que abrir la app por su cuenta. Se usa la version
+        // poblada porque el texto del aviso nombra la cancha.
+        if (reservaPopulated && reservaPopulated.estado !== estadoPrevio) {
+            await notificarCambioEstadoReserva(
+                reservaPopulated,
+                reservaPopulated.estado,
+            );
+        }
 
         await auditAdminGeneralAction({
             req,
@@ -1954,6 +1972,18 @@ const cerrarReserva = async (req = request, res = response) => {
         });
 
         const reservaActualizada = await Reservas.findById(id).then((item) => populateReservaQuery(item));
+
+        // El cierre tambien le importa al usuario: "completada" es lo que abre
+        // su ventana de 24h para calificar, y los cierres negativos (no-show,
+        // cancelacion tardia, incidencia) quedan en su historial de
+        // reputacion. Si se entera recien la proxima vez que abre la app, la
+        // ventana de calificacion puede haber vencido.
+        if (reservaActualizada) {
+            await notificarCambioEstadoReserva(
+                reservaActualizada,
+                reservaActualizada.estado,
+            );
+        }
 
         return res.status(200).json({
             ok: true,
