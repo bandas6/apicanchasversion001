@@ -1,7 +1,18 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
+const { dbConnection } = require('../database/config');
 const Usuarios = require('../models/usuarios');
-const { collectUserTokens, enviarPushAUsuario } = require('../helpers/push-sender');
+const {
+    collectUserTokens,
+    enviarPushATokens,
+    enviarPushAUsuario,
+} = require('../helpers/push-sender');
+
+const MENSAJE_DE_PRUEBA = {
+    title: 'Prueba de notificaciones',
+    body: 'Si ves esto, la cadena completa de push esta funcionando.',
+    data: { tipo: 'diagnostico' },
+};
 
 /// Diagnostico de la cadena de push, de punta a punta y por partes.
 ///
@@ -16,19 +27,25 @@ const { collectUserTokens, enviarPushAUsuario } = require('../helpers/push-sende
 ///
 /// Uso:
 ///   node scripts/enviar-push-de-prueba.js user1@user.com
+///   node scripts/enviar-push-de-prueba.js --token <TOKEN_FCM>
+///
+/// El modo `--token` envia a un dispositivo concreto sin tocar la base. Sirve
+/// para aislar el problema cuando MongoDB no esta disponible (por ejemplo el
+/// `querySrv ECONNREFUSED` de Atlas cuando el DNS local no resuelve registros
+/// SRV): si con `--token` llega la notificacion, las credenciales del servidor
+/// y la entrega de FCM estan bien, y lo que falla es otra cosa.
 
 const run = async () => {
-    const correo = String(process.argv[2] || '').trim().toLowerCase();
+    const [primerArg, segundoArg] = process.argv.slice(2);
+    const modoToken = primerArg === '--token';
+    const tokenDirecto = modoToken ? String(segundoArg || '').trim() : '';
+    const correo = modoToken ? '' : String(primerArg || '').trim().toLowerCase();
 
-    if (!correo) {
-        console.error('Falta el correo del usuario.');
+    if (!correo && !tokenDirecto) {
+        console.error('Falta el correo del usuario (o un token con --token).');
         console.error('Uso: node scripts/enviar-push-de-prueba.js user1@user.com');
+        console.error('     node scripts/enviar-push-de-prueba.js --token <TOKEN_FCM>');
         process.exit(1);
-    }
-
-    const uri = process.env.MONGO_DBCNN;
-    if (!uri) {
-        throw new Error('MONGO_DBCNN no esta configurado');
     }
 
     // Se avisa antes de conectarse a la base: si faltan las credenciales, el
@@ -49,7 +66,28 @@ const run = async () => {
         console.log('   sola linea) o GOOGLE_APPLICATION_CREDENTIALS con la ruta al archivo.');
     }
 
-    await mongoose.connect(uri);
+    if (tokenDirecto) {
+        console.log('2. Modo token directo: no se consulta la base');
+        console.log(
+            `3. Token: ${tokenDirecto.slice(0, 12)}...${tokenDirecto.slice(-6)}`,
+        );
+        console.log('4. Enviando...');
+
+        const resultado = await enviarPushATokens([tokenDirecto], MENSAJE_DE_PRUEBA);
+        console.log('   Resultado:', JSON.stringify(resultado));
+        console.log(
+            resultado.ok
+                ? '\nEnviado. Revisá el dispositivo (con la app en segundo plano).'
+                : '\nNo se envio. Revisá el detalle de arriba.',
+        );
+        return;
+    }
+
+    // Se usa `dbConnection()` y no `mongoose.connect()` directo porque ese
+    // helper aplica MONGO_DNS_SERVERS: sin eso, en redes cuyo DNS no resuelve
+    // los registros SRV que exige `mongodb+srv://`, el script falla con
+    // `querySrv ECONNREFUSED` aunque el servidor si conecte.
+    await dbConnection();
 
     const usuario = await Usuarios.findOne({ correo }).select('correo devicePushTokens');
     if (!usuario) {
@@ -76,11 +114,7 @@ const run = async () => {
     }
 
     console.log('4. Enviando...');
-    const resultado = await enviarPushAUsuario(usuario._id, {
-        title: 'Prueba de notificaciones',
-        body: 'Si ves esto, la cadena completa de push esta funcionando.',
-        data: { tipo: 'diagnostico' },
-    });
+    const resultado = await enviarPushAUsuario(usuario._id, MENSAJE_DE_PRUEBA);
 
     console.log('   Resultado:', JSON.stringify(resultado));
 
