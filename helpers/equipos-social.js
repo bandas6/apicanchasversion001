@@ -56,10 +56,63 @@ const puedeSalirDelEquipo = ({ membresiaRol }) => membresiaRol !== 'capitan';
  */
 const puedeParticiparEnEquipos = ({ rol }) => rol === 'USER';
 
+/**
+ * Filtro de la busqueda publica de equipos (GET /equipos) para un usuario
+ * con sesion.
+ *
+ * Dos exclusiones, por dos motivos distintos:
+ *
+ * - **Bloqueos** (ya existia): no se muestran equipos capitaneados por
+ *   alguien con quien hay bloqueo en cualquier direccion.
+ * - **Mis propios equipos** (nuevo): la busqueda existe para *encontrar un
+ *   equipo al que sumarse*. Un equipo del que ya soy capitan o miembro
+ *   aceptado no es un resultado util: la unica accion que ofrece el detalle
+ *   ahi es "ya estas adentro". Ocupa lugar en la lista y, desde que Buscar
+ *   es una pestaña de primer nivel (40c), es lo primero que ve el usuario.
+ *
+ * Lo que SI se sigue mostrando es un equipo donde tengo una solicitud o una
+ * invitacion pendiente: ahi el detalle si dice algo util ("ya pediste
+ * entrar", "te invitaron") y esconderlo dejaria al usuario sin forma de
+ * volver a ese equipo desde la busqueda.
+ *
+ * Se separa del controller como funcion pura para poder testear la forma
+ * del query sin mongodb-memory-server, mismo criterio que el resto de este
+ * archivo.
+ */
+const construirFiltroBusquedaEquipos = ({
+    base = {},
+    viewerId = null,
+    idsBloqueados = [],
+    idsEquiposPropios = [],
+} = {}) => {
+    const query = { ...base };
+
+    // Un solo `capitan` en el query: si se asignaran por separado el filtro
+    // de bloqueos y el de "no soy yo", el segundo pisaria al primero y los
+    // equipos de un usuario bloqueado volverian a aparecer.
+    const capitanesExcluidos = [...new Set([
+        ...idsBloqueados.map(String),
+        ...(viewerId ? [String(viewerId)] : []),
+    ])];
+    if (capitanesExcluidos.length > 0) {
+        query.capitan = { $nin: capitanesExcluidos };
+    }
+
+    // El filtro por capitan no alcanza: tambien hay que excluir los equipos
+    // donde soy miembro aceptado sin ser el capitan.
+    const equiposExcluidos = [...new Set(idsEquiposPropios.map(String))];
+    if (equiposExcluidos.length > 0) {
+        query._id = { $nin: equiposExcluidos };
+    }
+
+    return query;
+};
+
 module.exports = {
     puedeGestionarEquipo,
     puedeResponderMembresia,
     puedeExpulsarMiembro,
     puedeSalirDelEquipo,
     puedeParticiparEnEquipos,
+    construirFiltroBusquedaEquipos,
 };

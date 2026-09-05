@@ -13,6 +13,7 @@ const {
     puedeExpulsarMiembro,
     puedeSalirDelEquipo,
     puedeParticiparEnEquipos,
+    construirFiltroBusquedaEquipos,
 } = require('../helpers/equipos-social');
 
 // Fase 3: zona es opcional -- un equipo creado sin zona simplemente no
@@ -129,23 +130,41 @@ const obtenerEquipos = async (req = request, res = response) => {
             );
         }
 
-        // Fase 3: si hay sesion, excluir equipos capitaneados por alguien con
-        // relacion de bloqueo (en cualquier direccion) con quien busca.
+        // Si hay sesion se excluyen dos cosas: los equipos de alguien con
+        // quien hay bloqueo (Fase 3) y los equipos donde el que busca ya
+        // esta adentro (40c) -- ver `construirFiltroBusquedaEquipos`.
+        let queryFinal = query;
         if (req.usuarioAuth) {
             const viewerId = req.usuarioAuth._id;
-            const meBloquearon = await Usuarios.find({ usuariosBloqueados: viewerId }).select('_id');
-            const idsBloqueo = resolveIdsBloqueados(
-                req.usuarioAuth.usuariosBloqueados || [],
-                meBloquearon.map((u) => u._id),
-            );
-            if (idsBloqueo.length > 0) {
-                query.capitan = { $nin: idsBloqueo };
-            }
+
+            const [meBloquearon, membresiasPropias] = await Promise.all([
+                Usuarios.find({ usuariosBloqueados: viewerId }).select('_id'),
+                // 'aceptada' cubre tanto al capitan (su membresia de
+                // origen 'creacion' nace aceptada) como al miembro comun.
+                // Las pendientes quedan afuera a proposito: esos equipos si
+                // se siguen mostrando.
+                EquipoMembresia.find({
+                    usuario: viewerId,
+                    estado: 'aceptada',
+                }).select('equipo'),
+            ]);
+
+            queryFinal = construirFiltroBusquedaEquipos({
+                base: query,
+                viewerId,
+                idsBloqueados: resolveIdsBloqueados(
+                    req.usuarioAuth.usuariosBloqueados || [],
+                    meBloquearon.map((u) => u._id),
+                ),
+                idsEquiposPropios: membresiasPropias
+                    .map((m) => m.equipo)
+                    .filter(Boolean),
+            });
         }
 
         const [total, equipos] = await Promise.all([
-            Equipos.countDocuments(query),
-            Equipos.find(query)
+            Equipos.countDocuments(queryFinal),
+            Equipos.find(queryFinal)
                 .populate('deporte', 'nombre iconoMaterial')
                 .populate('capitan', 'nombre apellido')
                 .skip(Number(desde))
