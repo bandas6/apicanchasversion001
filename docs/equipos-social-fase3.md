@@ -161,3 +161,37 @@ cualquiera que no pertenezca al equipo (correcto para privacidad, pero deja
 sin datos al propio dueño de la solicitud). Se agrega `miMembresia` (la
 membresia pendiente propia, o `null`) como campo hermano de `miEstado` en
 `GET /equipos/:id`, sin tocar el filtro de privacidad del roster.
+
+---
+
+## Correccion posterior (2026-09-05): la busqueda devolvia mis propios equipos
+
+`GET /equipos` excluia equipos por bloqueo pero no los del propio usuario, asi
+que un jugador veia en la busqueda publica el equipo que el mismo creo y
+aquellos donde ya era miembro. Se noto cuando la busqueda paso a ser una
+pestaña de primer nivel en la app (40c): antes estaba detras de una lupa y
+casi nadie llegaba.
+
+La busqueda existe para **encontrar un equipo al que sumarse**. Un equipo
+donde ya estoy adentro no es un resultado util — la unica accion que ofrece su
+detalle es "ya estas adentro" — y ademas ocupa lugar en la lista.
+
+Ahora, con sesion, se excluyen:
+
+- los equipos donde soy **capitan** (por `capitan`, junto con los bloqueos), y
+- los equipos donde tengo una membresia en estado **`aceptada`** (por `_id`).
+
+Lo que **si** se sigue mostrando es un equipo donde tengo una solicitud o una
+invitacion **pendiente**: ahi el detalle dice algo util (`miEstado` =
+`solicitud_pendiente` / `invitacion_pendiente`) y esconderlo dejaria al
+usuario sin forma de volver a ese equipo desde la busqueda.
+
+El armado del filtro vive en `construirFiltroBusquedaEquipos`
+(`helpers/equipos-social.js`), como funcion pura y testeada. Se extrajo por un
+motivo concreto: los dos filtros de `capitan` (bloqueos y "no soy yo") se
+escriben sobre la misma clave del query, y asignarlos por separado hacia que
+el segundo pisara al primero — volviendo a mostrar equipos de un usuario
+bloqueado. Hay un test que cubre exactamente ese caso.
+
+Sin sesion (`validarJWTOptional` sin token) no se agrega ninguna exclusion:
+un invitado no tiene equipos propios.

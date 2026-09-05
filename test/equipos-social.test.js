@@ -7,6 +7,7 @@ const {
     puedeExpulsarMiembro,
     puedeSalirDelEquipo,
     puedeParticiparEnEquipos,
+    construirFiltroBusquedaEquipos,
 } = require('../helpers/equipos-social');
 
 test('puedeGestionarEquipo: el capitan puede, otro jugador no', () => {
@@ -117,4 +118,65 @@ test('puedeParticiparEnEquipos: solo el rol USER puede crear/unirse/ser invitado
     assert.equal(puedeParticiparEnEquipos({ rol: 'ADMIN' }), false);
     assert.equal(puedeParticiparEnEquipos({ rol: 'DEV' }), false);
     assert.equal(puedeParticiparEnEquipos({ rol: undefined }), false);
+});
+
+// --- 40c: la busqueda publica no devuelve equipos donde ya estoy adentro ---
+
+test('construirFiltroBusquedaEquipos: sin sesion no agrega exclusiones', () => {
+    const query = construirFiltroBusquedaEquipos({ base: { estado: true } });
+    assert.deepEqual(query, { estado: true });
+});
+
+test('construirFiltroBusquedaEquipos: excluye al propio usuario como capitan', () => {
+    const query = construirFiltroBusquedaEquipos({
+        base: { estado: true },
+        viewerId: 'u1',
+    });
+    assert.deepEqual(query.capitan, { $nin: ['u1'] });
+});
+
+test('construirFiltroBusquedaEquipos: excluye los equipos donde soy miembro', () => {
+    const query = construirFiltroBusquedaEquipos({
+        base: { estado: true },
+        viewerId: 'u1',
+        idsEquiposPropios: ['e1', 'e2'],
+    });
+    assert.deepEqual(query._id, { $nin: ['e1', 'e2'] });
+});
+
+test('construirFiltroBusquedaEquipos: el filtro de bloqueos no se pierde al sumar el propio', () => {
+    // Este es el bug que el helper existe para evitar: asignar los dos
+    // filtros de capitan por separado hacia que el segundo pisara al
+    // primero y los equipos de un bloqueado volvieran a aparecer.
+    const query = construirFiltroBusquedaEquipos({
+        base: { estado: true },
+        viewerId: 'u1',
+        idsBloqueados: ['b1', 'b2'],
+    });
+    assert.deepEqual(query.capitan, { $nin: ['b1', 'b2', 'u1'] });
+});
+
+test('construirFiltroBusquedaEquipos: no duplica si el viewer ya venia en bloqueados', () => {
+    const query = construirFiltroBusquedaEquipos({
+        base: { estado: true },
+        viewerId: 'u1',
+        idsBloqueados: ['u1', 'b1'],
+    });
+    assert.deepEqual(query.capitan, { $nin: ['u1', 'b1'] });
+});
+
+test('construirFiltroBusquedaEquipos: normaliza ObjectId a string', () => {
+    const objectIdish = { toString: () => 'e9' };
+    const query = construirFiltroBusquedaEquipos({
+        base: {},
+        viewerId: 'u1',
+        idsEquiposPropios: [objectIdish],
+    });
+    assert.deepEqual(query._id, { $nin: ['e9'] });
+});
+
+test('construirFiltroBusquedaEquipos: no muta el filtro base que recibe', () => {
+    const base = { estado: true };
+    construirFiltroBusquedaEquipos({ base, viewerId: 'u1', idsEquiposPropios: ['e1'] });
+    assert.deepEqual(base, { estado: true });
 });
