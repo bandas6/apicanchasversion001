@@ -147,10 +147,32 @@ const CanchasSchema = new Schema({
         type: Number,
         default: 0,
     },
+    // JERARQUIA DE PRECIOS (punto 3.3 del checklist 2026-09-02), de mayor a
+    // menor prioridad:
+    //   1. Excepcion por fecha  -> `tarifasEspeciales[].precio`
+    //   2. Celda de la grilla   -> `tarifasHorarias[].precio` (franja x dia)
+    //   3. Precio base          -> `precioHoraBase`
+    // Dicho de otro modo: la grilla manda, el precio base es el fallback "se
+    // usa donde la grilla no dice nada" (que es la frase que ya muestra el
+    // panel admin).
+
+    /**
+     * @deprecated Alias historico de `precioHoraBase`.
+     *
+     * Los dos campos existen desde el principio sin nada que los distinga, y
+     * el cliente escribe siempre ambos con el mismo valor — asi que hoy no
+     * divergen. Pero los lectores no eran consistentes (Home leia `precioHora`
+     * y la ficha de complejo `precioHoraBase`), y bastaba un endpoint que
+     * escribiera solo uno para mostrar dos precios distintos por la misma
+     * cancha. `precioHoraBase` es el canonico; este queda solo por
+     * compatibilidad y no debe usarse en codigo nuevo.
+     */
     precioHora: {
         type: Number,
         default: 0,
     },
+
+    /** Precio por hora canonico. Fallback de la grilla de tarifas. */
     precioHoraBase: {
         type: Number,
         default: 0,
