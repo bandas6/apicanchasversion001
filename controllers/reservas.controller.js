@@ -8,7 +8,8 @@ const ReservationWaitlist = require("../models/reservation-waitlists");
 const { USER_ATTENDANCE_VALUES, USER_BEHAVIOR_VALUES } = require("../models/user-reputation-events");
 const { ADMIN_ROLES, usuarioAdministraComplejo } = require("../middlewares/validar-roles");
 const { auditAdminGeneralAction } = require("../helpers/audit-admin-general");
-const { notificarCambioEstadoReserva } = require("../helpers/push-reservas");
+const { notificarCambioEstadoReserva, formatDiaReserva } = require("../helpers/push-reservas");
+const { enviarPushAUsuario } = require("../helpers/push-sender");
 const {
     CLOSURE_STATES,
     USER_REVIEW_ALLOWED_STATES,
@@ -384,7 +385,12 @@ const buildUserReputationSummaryPayload = (usuario = {}) => {
     };
 };
 
-const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identityApproved = true }) => {
+// `reservasPropiasVivas` es opcional y solo lo manda el endpoint de
+// disponibilidad cuando hay un usuario autenticado: son sus reservas
+// 'pendiente'/'confirmada' de esa cancha y ese dia. Sirve para marcar el slot
+// que el usuario ya pidio, de modo que la app pueda deshabilitarlo antes de
+// que toque "Reservar" y reciba el 409 de guardarReserva.
+const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identityApproved = true, reservasPropiasVivas = [] }) => {
     const diaSemana = getDayOfWeek(fecha);
     const tarifasEspeciales = Array.isArray(cancha.tarifasEspeciales) ? cancha.tarifasEspeciales : [];
     const slotConfig = resolveCanchaSlotConfig(cancha);
@@ -485,6 +491,18 @@ const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identi
             if (ocupado) {
                 disponible = false;
                 motivo = 'ocupada';
+            } else {
+                const yaEsMia = reservasPropiasVivas.some((item) => hasTimeConflict({
+                    startA: startMinutes,
+                    endA: endMinutes,
+                    startB: parseHourToMinutes(item.horaInicio),
+                    endB: parseHourToMinutes(item.horaFin),
+                }));
+
+                if (yaEsMia) {
+                    disponible = false;
+                    motivo = 'ya_reservada_por_ti';
+                }
             }
         }
 
@@ -707,6 +725,40 @@ const guardarReserva = async (req = request, res = response) => {
                 ok: false,
                 error: 'El slot solicitado ya no esta disponible para esta cancha'
             });
+        }
+
+        // Un mismo usuario no puede pedir dos veces la misma cancha en un
+        // horario que se solape. El chequeo de disponibilidad de arriba no lo
+        // cubre: `buildAvailabilitySlots` solo mira reservas 'confirmada', asi
+        // que dos solicitudes pendientes identicas pasaban las dos y el admin
+        // terminaba viendo tarjetas duplicadas.
+        // Alcance (a confirmar con Arnold): cuenta el solape, no solo el
+        // horario exacto, y solo contra estados vivos — una reserva rechazada
+        // o cancelada no bloquea volver a pedir.
+        if (data.usuario) {
+            const reservasVivasDelUsuario = await Reservas.find({
+                usuario: data.usuario,
+                cancha: data.cancha,
+                fecha: {
+                    $gte: startOfDay,
+                    $lt: endOfDay,
+                },
+                estado: { $in: ['pendiente', 'confirmada'] },
+            });
+
+            const yaSolicitada = reservasVivasDelUsuario.some((item) => hasTimeConflict({
+                startA: startMinutes,
+                endA: endMinutes,
+                startB: parseHourToMinutes(item.horaInicio),
+                endB: parseHourToMinutes(item.horaFin),
+            }));
+
+            if (yaSolicitada) {
+                return res.status(409).json({
+                    ok: false,
+                    error: 'Ya tienes una reserva para esta cancha en ese horario'
+                });
+            }
         }
 
         if (usuarioAuth && ADMIN_ROLES.includes(usuarioAuth.rol)) {
@@ -958,6 +1010,15 @@ const actualizarReserva = async (req = request, res = response) => {
                 reservaPopulated,
                 reservaPopulated.estado,
             );
+
+            // 3.5: si la reserva DEJO de estar confirmada, ese slot quedo
+            // libre. Es el unico momento en que hay un cupo nuevo que contarle
+            // a quien lo estaba esperando.
+            if (estadoPrevio === 'confirmada' && reservaPopulated.estado !== 'confirmada') {
+                notificarCupoLiberado(reservaPopulated).catch((error) => {
+                    console.error('[push] Fallo el aviso de cupo:', error.message);
+                });
+            }
         }
 
         await auditAdminGeneralAction({
@@ -1057,12 +1118,25 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
             ? true
             : req.usuarioAuth?.identidadEstado === 'aprobada';
 
+        const reservasPropiasVivas = req.usuarioAuth?._id
+            ? await Reservas.find({
+                usuario: req.usuarioAuth._id,
+                cancha: id,
+                fecha: {
+                    $gte: startOfDay,
+                    $lt: endOfDay,
+                },
+                estado: { $in: ['pendiente', 'confirmada'] },
+            })
+            : [];
+
         const franjas = buildAvailabilitySlots({
             cancha,
             complejo: cancha.complejo,
             fecha: targetDate,
             reservas,
             identityApproved,
+            reservasPropiasVivas,
         });
 
         return res.status(200).json({
@@ -1555,9 +1629,14 @@ const eliminarAvisoDisponibilidad = async (req = request, res = response) => {
 
 // Evalua los avisos activos del usuario contra la disponibilidad real (misma
 // logica que obtenerDisponibilidadAgregada) y marca como 'notificado' los que
-// ya tienen cupo. No dispara push: el cliente llama esto al abrir/reanudar la
-// app y usa la respuesta para mostrar una notificacion local (ver
-// docs/viabilidad-aviso-cupo.md, V2 — no hay infraestructura de push real).
+// ya tienen cupo. El cliente llama esto al abrir/reanudar la app y usa la
+// respuesta para mostrar una notificacion local.
+//
+// Este camino sigue sin disparar push, y esta bien: aca el usuario ya tiene la
+// app abierta. Desde el punto 3.5 (checklist 2026-09-02) existe el camino
+// inverso —`notificarCupoLiberado`, que se dispara cuando una reserva
+// confirmada se cae y manda push a quien esperaba ese hueco—, que es el que
+// cubre el caso real de "el usuario no estaba mirando el telefono".
 const obtenerEstadoAvisosDisponibilidad = async (req = request, res = response) => {
     try {
         const usuario = await Usuarios.findById(req.usuarioAuth?._id);
@@ -1678,6 +1757,113 @@ const obtenerEstadoAvisosDisponibilidad = async (req = request, res = response) 
             ok: false,
             error: error.message,
         });
+    }
+};
+
+/**
+ * Punto 3.5 del checklist 2026-09-02: avisar por push cuando se libera un cupo
+ * que alguien estaba esperando.
+ *
+ * Hasta ahora el aviso de cupo solo se evaluaba cuando el propio usuario abria
+ * o reanudaba la app (`obtenerEstadoAvisosDisponibilidad`, que el cliente
+ * llama desde `WidgetsBindingObserver`). O sea: si el usuario no abria la app
+ * en el momento justo, perdia el cupo igual — la funcion no cumplia lo que
+ * promete. `docs/viabilidad-aviso-cupo.md` lo documentaba como limitacion
+ * porque "no hay infraestructura de push real"; eso quedo obsoleto, la hay y
+ * funciona (`helpers/push-sender.js`).
+ *
+ * Esto lo invierte: cuando una reserva CONFIRMADA deja de serlo, el slot queda
+ * libre, y ese es el momento en que hay algo que contar. Se busca a quien
+ * tenga un aviso activo para ese dia y esa franja, con el complejo dentro de
+ * su radio, se lo marca 'notificado' y se le manda la push.
+ *
+ * Nunca lanza: la reserva ya cambio de estado y un fallo de push no puede
+ * hacer fracasar esa operacion.
+ */
+const notificarCupoLiberado = async (reserva) => {
+    try {
+        const canchaId = reserva?.cancha?._id || reserva?.cancha;
+        if (!canchaId) return { ok: false, reason: 'sin_cancha' };
+
+        const complejoRef = reserva?.cancha?.complejo || reserva?.complejo;
+        const complejo = complejoRef && complejoRef.ubicacionGeo
+            ? complejoRef
+            : await Complejos.findById(complejoRef?._id || complejoRef).select('ubicacionGeo nombre').lean();
+
+        const lat = Number(complejo?.ubicacionGeo?.lat);
+        const lng = Number(complejo?.ubicacionGeo?.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            // Sin coordenadas no se puede decidir si cae en el radio de nadie.
+            return { ok: false, reason: 'complejo_sin_geo' };
+        }
+
+        const reservaDate = new Date(reserva.fecha);
+        const diaLiberado = new Date(
+            reservaDate.getFullYear(),
+            reservaDate.getMonth(),
+            reservaDate.getDate(),
+        );
+        const franjaLiberada = resolveFranjaKey(reserva.horaInicio);
+
+        // Solo avisos vivos y de un dia que todavia no paso.
+        const hoy = new Date();
+        const normalizedHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+        if (diaLiberado.getTime() < normalizedHoy.getTime()) {
+            return { ok: false, reason: 'dia_pasado' };
+        }
+
+        const candidatos = await Usuarios.find({
+            'avisosDisponibilidad.estado': 'activo',
+        }).select('avisosDisponibilidad');
+
+        let avisados = 0;
+        for (const usuario of candidatos) {
+            // El que libero el cupo es justamente el que cancelo: no tiene
+            // sentido avisarle de su propio hueco.
+            if (String(usuario._id) === String(reserva?.usuario?._id || reserva?.usuario)) {
+                continue;
+            }
+
+            let cambio = false;
+            for (const aviso of usuario.avisosDisponibilidad || []) {
+                if (aviso.estado !== 'activo') continue;
+
+                const avisoDia = new Date(aviso.dia);
+                const normalizedAvisoDia = new Date(
+                    avisoDia.getFullYear(),
+                    avisoDia.getMonth(),
+                    avisoDia.getDate(),
+                ).getTime();
+                if (normalizedAvisoDia !== diaLiberado.getTime()) continue;
+                if (aviso.franja && aviso.franja !== franjaLiberada) continue;
+                if (haversineDistanceKm(aviso.lat, aviso.lng, lat, lng) > (aviso.radioKm || 4)) {
+                    continue;
+                }
+
+                aviso.estado = 'notificado';
+                cambio = true;
+            }
+
+            if (!cambio) continue;
+
+            await usuario.save();
+            avisados += 1;
+
+            await enviarPushAUsuario(usuario._id, {
+                title: 'Se liberó un cupo',
+                body: `Quedó libre un turno el ${formatDiaReserva(reserva.fecha)} `
+                    + `${reserva.horaInicio} en ${complejo?.nombre || 'una cancha cerca tuyo'}.`,
+                // Sin id de reserva: el cupo es un hueco, no una reserva. La
+                // app resuelve 'reserva' sin id como "abrir Mis reservas".
+                data: { tipo: 'reserva', estado: 'cupo_liberado' },
+            });
+        }
+
+        console.log(`[push] Cupo liberado -> usuarios avisados=${avisados}`);
+        return { ok: true, avisados };
+    } catch (error) {
+        console.error('[push] Error avisando cupo liberado:', error.message);
+        return { ok: false, reason: 'error', error: error.message };
     }
 };
 
