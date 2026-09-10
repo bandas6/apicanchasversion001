@@ -384,7 +384,12 @@ const buildUserReputationSummaryPayload = (usuario = {}) => {
     };
 };
 
-const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identityApproved = true }) => {
+// `reservasPropiasVivas` es opcional y solo lo manda el endpoint de
+// disponibilidad cuando hay un usuario autenticado: son sus reservas
+// 'pendiente'/'confirmada' de esa cancha y ese dia. Sirve para marcar el slot
+// que el usuario ya pidio, de modo que la app pueda deshabilitarlo antes de
+// que toque "Reservar" y reciba el 409 de guardarReserva.
+const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identityApproved = true, reservasPropiasVivas = [] }) => {
     const diaSemana = getDayOfWeek(fecha);
     const tarifasEspeciales = Array.isArray(cancha.tarifasEspeciales) ? cancha.tarifasEspeciales : [];
     const slotConfig = resolveCanchaSlotConfig(cancha);
@@ -485,6 +490,18 @@ const buildAvailabilitySlots = ({ cancha, complejo, fecha, reservas = [], identi
             if (ocupado) {
                 disponible = false;
                 motivo = 'ocupada';
+            } else {
+                const yaEsMia = reservasPropiasVivas.some((item) => hasTimeConflict({
+                    startA: startMinutes,
+                    endA: endMinutes,
+                    startB: parseHourToMinutes(item.horaInicio),
+                    endB: parseHourToMinutes(item.horaFin),
+                }));
+
+                if (yaEsMia) {
+                    disponible = false;
+                    motivo = 'ya_reservada_por_ti';
+                }
             }
         }
 
@@ -707,6 +724,40 @@ const guardarReserva = async (req = request, res = response) => {
                 ok: false,
                 error: 'El slot solicitado ya no esta disponible para esta cancha'
             });
+        }
+
+        // Un mismo usuario no puede pedir dos veces la misma cancha en un
+        // horario que se solape. El chequeo de disponibilidad de arriba no lo
+        // cubre: `buildAvailabilitySlots` solo mira reservas 'confirmada', asi
+        // que dos solicitudes pendientes identicas pasaban las dos y el admin
+        // terminaba viendo tarjetas duplicadas.
+        // Alcance (a confirmar con Arnold): cuenta el solape, no solo el
+        // horario exacto, y solo contra estados vivos — una reserva rechazada
+        // o cancelada no bloquea volver a pedir.
+        if (data.usuario) {
+            const reservasVivasDelUsuario = await Reservas.find({
+                usuario: data.usuario,
+                cancha: data.cancha,
+                fecha: {
+                    $gte: startOfDay,
+                    $lt: endOfDay,
+                },
+                estado: { $in: ['pendiente', 'confirmada'] },
+            });
+
+            const yaSolicitada = reservasVivasDelUsuario.some((item) => hasTimeConflict({
+                startA: startMinutes,
+                endA: endMinutes,
+                startB: parseHourToMinutes(item.horaInicio),
+                endB: parseHourToMinutes(item.horaFin),
+            }));
+
+            if (yaSolicitada) {
+                return res.status(409).json({
+                    ok: false,
+                    error: 'Ya tienes una reserva para esta cancha en ese horario'
+                });
+            }
         }
 
         if (usuarioAuth && ADMIN_ROLES.includes(usuarioAuth.rol)) {
@@ -1057,12 +1108,25 @@ const obtenerDisponibilidadCancha = async (req = request, res = response) => {
             ? true
             : req.usuarioAuth?.identidadEstado === 'aprobada';
 
+        const reservasPropiasVivas = req.usuarioAuth?._id
+            ? await Reservas.find({
+                usuario: req.usuarioAuth._id,
+                cancha: id,
+                fecha: {
+                    $gte: startOfDay,
+                    $lt: endOfDay,
+                },
+                estado: { $in: ['pendiente', 'confirmada'] },
+            })
+            : [];
+
         const franjas = buildAvailabilitySlots({
             cancha,
             complejo: cancha.complejo,
             fecha: targetDate,
             reservas,
             identityApproved,
+            reservasPropiasVivas,
         });
 
         return res.status(200).json({
