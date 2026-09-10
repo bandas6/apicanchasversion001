@@ -7,6 +7,7 @@ const { ADMIN_ROLES, tieneRol } = require('../middlewares/validar-roles');
 const { uploadBufferToCloudinary } = require('../helpers/cloudinary');
 const { CATALOGOS_PERFIL, normalizeCatalogValue } = require('../helpers/profile-catalogs');
 const { resolveIdsBloqueados, hayBloqueoEntrePar } = require('../helpers/bloqueos');
+const { notificarSolicitudDeUnion } = require('../helpers/push-equipos');
 const {
     puedeGestionarEquipo,
     puedeResponderMembresia,
@@ -481,6 +482,18 @@ const solicitarUnirseEquipo = async (req = request, res = response) => {
             estado: 'pendiente',
             mensaje,
         }).save();
+
+        // 5.3: el capitan no se enteraba de la solicitud por ningun canal.
+        // Va despues del save y sin await bloqueante sobre la respuesta: la
+        // solicitud ya esta guardada y un fallo de push no puede hacerla
+        // fracasar.
+        notificarSolicitudDeUnion({
+            equipo,
+            solicitante: req.usuarioAuth,
+            membresiaId: membresia._id,
+        }).catch((error) => {
+            console.error('[push] No se pudo avisar al capitan:', error.message);
+        });
 
         return res.status(201).json({ ok: true, membresia });
     } catch (error) {
